@@ -24,16 +24,22 @@ test.beforeEach(() => {
   resetRunState();
 });
 
-test('settings validation accepts only supported new values', () => {
-  assert.deepEqual(validateSettings({ difficulty: 'hard', lengthBand: 'long' }), { difficulty: 'hard', lengthBand: 'long' });
-  assert.deepEqual(validateSettings({ difficulty: '<script>', lengthBand: 'huge' }), DEFAULT_SETTINGS);
+test('settings validation accepts only supported values', () => {
+  assert.deepEqual(validateSettings({
+    mode: 'code', language: 'python', category: 'loops', difficulty: 'hard', lengthBand: 'long'
+  }), {
+    mode: 'code', language: 'python', category: 'loops', difficulty: 'hard', lengthBand: 'long'
+  });
+  assert.deepEqual(validateSettings({
+    mode: '<script>', language: 'ruby', category: '', difficulty: '<script>', lengthBand: 'huge'
+  }), DEFAULT_SETTINGS);
 });
 
 test('legacy numeric word counts migrate to valid passage length bands', () => {
-  assert.deepEqual(validateSettings({ difficulty: 'easy', wordCount: 10 }), { difficulty: 'easy', lengthBand: 'short' });
-  assert.deepEqual(validateSettings({ difficulty: 'easy', wordCount: '25' }), { difficulty: 'easy', lengthBand: 'medium' });
-  assert.deepEqual(validateSettings({ difficulty: 'hard', wordCount: 50 }), { difficulty: 'hard', lengthBand: 'long' });
-  assert.deepEqual(validateSettings({ difficulty: 'hard', wordCount: 99 }), { difficulty: 'hard', lengthBand: 'medium' });
+  assert.deepEqual(validateSettings({ difficulty: 'easy', wordCount: 10 }), { ...DEFAULT_SETTINGS, difficulty: 'easy', lengthBand: 'short' });
+  assert.deepEqual(validateSettings({ difficulty: 'easy', wordCount: '25' }), { ...DEFAULT_SETTINGS, difficulty: 'easy', lengthBand: 'medium' });
+  assert.deepEqual(validateSettings({ difficulty: 'hard', wordCount: 50 }), { ...DEFAULT_SETTINGS, difficulty: 'hard', lengthBand: 'long' });
+  assert.deepEqual(validateSettings({ difficulty: 'hard', wordCount: 99 }), { ...DEFAULT_SETTINGS, difficulty: 'hard', lengthBand: 'medium' });
 });
 
 test('loadState migrates old settings while preserving valid history', () => {
@@ -45,9 +51,10 @@ test('loadState migrates old settings while preserving valid history', () => {
     ]
   }));
   assert.equal(loadState(), true);
-  assert.deepEqual(state.settings, { difficulty: 'easy', lengthBand: 'medium' });
+  assert.deepEqual(state.settings, { ...DEFAULT_SETTINGS, difficulty: 'easy', lengthBand: 'medium' });
   assert.equal(state.history.length, 1);
   assert.equal(state.history[0].wpm, 72);
+  assert.equal(state.history[0].mode, 'prose');
   assert.deepEqual(state.history[0].mistakes, []);
   assert.equal(state.history[0].isTargetedRetry, false);
 });
