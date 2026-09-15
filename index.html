@@ -29,6 +29,24 @@
 
       <section class="control-bar" aria-label="Test settings">
         <div class="control-group">
+          <label for="modeSelect">MODE</label>
+          <div class="select-wrap">
+            <select id="modeSelect">
+              <option value="prose">Prose</option>
+              <option value="code">Code</option>
+            </select>
+          </div>
+        </div>
+        <div class="control-group" id="languageGroup" hidden>
+          <label for="languageSelect">LANGUAGE</label>
+          <div class="select-wrap">
+            <select id="languageSelect">
+              <option value="cpp">C++</option>
+              <option value="python">Python</option>
+            </select>
+          </div>
+        </div>
+        <div class="control-group">
           <label for="difficultySelect">DIFFICULTY</label>
           <div class="select-wrap">
             <select id="difficultySelect">
@@ -38,7 +56,15 @@
             </select>
           </div>
         </div>
-        <div class="control-group">
+        <div class="control-group" id="categoryGroup" hidden>
+          <label for="categorySelect">CATEGORY</label>
+          <div class="select-wrap">
+            <select id="categorySelect">
+              <option value="all">All</option>
+            </select>
+          </div>
+        </div>
+        <div class="control-group" id="passageLengthGroup">
           <label for="passageLengthSelect">PASSAGE LENGTH</label>
           <div class="select-wrap">
             <select id="passageLengthSelect">
@@ -123,7 +149,7 @@
       </section>
     </main>
 
-    <footer><span>LOCAL PROCESS // NO DATA TRANSMITTED</span><span>BUILD 1.0.0</span></footer>
+    <footer><span>LOCAL PROCESS // NO DATA TRANSMITTED</span><span>BUILD 1.1.0</span></footer>
 
     <dialog class="result-modal" id="resultModal" aria-labelledby="resultTitle">
       <div class="modal__terminal-bar"><span></span><span></span><span></span><code>run_complete.log</code></div>
