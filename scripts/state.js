@@ -3,7 +3,15 @@ import { createPassageRunState } from './passageRun.js';
 const STORAGE_KEY = 'terminalVelocityData';
 export const DIFFICULTIES = Object.freeze(['easy', 'medium', 'hard']);
 export const LENGTH_BANDS = Object.freeze(['short', 'medium', 'long']);
-export const DEFAULT_SETTINGS = Object.freeze({ difficulty: 'medium', lengthBand: 'medium' });
+export const MODES = Object.freeze(['prose', 'code']);
+export const LANGUAGES = Object.freeze(['cpp', 'python']);
+export const DEFAULT_SETTINGS = Object.freeze({
+  mode: 'prose',
+  language: 'cpp',
+  category: 'all',
+  difficulty: 'medium',
+  lengthBand: 'medium'
+});
 
 export const state = {
   ...createPassageRunState(),
@@ -15,6 +23,11 @@ export const state = {
 };
 
 export function validateSettings(candidate = {}) {
+  const mode = MODES.includes(candidate.mode) ? candidate.mode : DEFAULT_SETTINGS.mode;
+  const language = LANGUAGES.includes(candidate.language) ? candidate.language : DEFAULT_SETTINGS.language;
+  const category = typeof candidate.category === 'string' && candidate.category.trim()
+    ? candidate.category
+    : DEFAULT_SETTINGS.category;
   const difficulty = DIFFICULTIES.includes(candidate.difficulty)
     ? candidate.difficulty
     : DEFAULT_SETTINGS.difficulty;
@@ -24,12 +37,16 @@ export function validateSettings(candidate = {}) {
     : null;
 
   if (!lengthBand && candidate.wordCount !== undefined) {
-    // Migrate the three settings used by the word-list version. Unknown legacy
-    // values reset to Medium rather than risking an invalid saved selection.
     lengthBand = ({ 10: 'short', 25: 'medium', 50: 'long' })[Number(candidate.wordCount)] ?? null;
   }
 
-  return { difficulty, lengthBand: lengthBand ?? DEFAULT_SETTINGS.lengthBand };
+  return {
+    mode,
+    language,
+    category,
+    difficulty,
+    lengthBand: lengthBand ?? DEFAULT_SETTINGS.lengthBand
+  };
 }
 
 function sanitizeHistory(candidate) {
@@ -50,6 +67,9 @@ function sanitizeHistory(candidate) {
       wpm: Math.round(entry.wpm),
       accuracy: Math.round(entry.accuracy),
       difficulty: entry.difficulty,
+      mode: MODES.includes(entry.mode) ? entry.mode : 'prose',
+      language: LANGUAGES.includes(entry.language) ? entry.language : null,
+      category: typeof entry.category === 'string' ? entry.category : 'all',
       lengthBand: LENGTH_BANDS.includes(entry.lengthBand) ? entry.lengthBand : DEFAULT_SETTINGS.lengthBand,
       completedAt: new Date(entry.completedAt ?? entry.date).toISOString(),
       id: typeof entry.id === 'string' ? entry.id : `run-${new Date(entry.completedAt ?? entry.date).getTime()}`,
