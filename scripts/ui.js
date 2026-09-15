@@ -135,7 +135,8 @@ export function renderLog(history) {
   el.logSection.hidden = history.length === 0;
   const rows = getRunsChronological(history).map((entry) => {
     const row = document.createElement('tr');
-    [formatDate(entry.completedAt), String(entry.wpm), `${entry.accuracy}%`, entry.difficulty.toUpperCase(), String(entry.mistakes.length)]
+    const mode = entry.mode === 'code' && entry.language ? entry.language.toUpperCase() : 'PROSE';
+    [formatDate(entry.completedAt), String(entry.wpm), `${entry.accuracy}%`, mode, String(entry.mistakes.length)]
       .forEach((value) => {
         const cell = document.createElement('td');
         cell.textContent = value;
