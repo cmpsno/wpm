@@ -78,8 +78,10 @@ export function tokenizeCode(code, language) {
   return tokens;
 }
 
-export function getCategories(language) {
-  return [...new Set(CODE_SNIPPETS.filter((snippet) => snippet.language === language).map((snippet) => snippet.category))].sort();
+export function getCategories(language, difficulty = null) {
+  return [...new Set(CODE_SNIPPETS
+    .filter((snippet) => snippet.language === language && (!difficulty || snippet.difficulty === difficulty))
+    .map((snippet) => snippet.category))].sort();
 }
 
 export function selectSnippet({ language, difficulty, category = 'all', previousId = null, random = Math.random }) {
