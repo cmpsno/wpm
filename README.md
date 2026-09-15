@@ -1,6 +1,6 @@
 # Terminal Velocity
 
-https://isaiahcampusano.github.io/wpm-/
+[play now](https://isaiahcampusano.github.io/wpm-/)
 
 A polished, dependency-free typing test with a retro terminal interface. Practice public-domain prose passages or switch to structured C++ and Python code snippets while keeping the same WPM, accuracy, and error telemetry.
 
