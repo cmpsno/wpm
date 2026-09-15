@@ -1,5 +1,6 @@
 import { state, pushHistory, resetRunState } from './state.js';
 import { PASSAGES, selectPassage } from './passages.js';
+import { selectSnippet } from './snippets.js';
 import { backspace, typeCharacter } from './passageRun.js';
 import { calcAccuracy, calcWPM } from './stats.js';
 import * as ui from './ui.js';
@@ -22,12 +23,19 @@ export function initGame() {
 export function resetTest(shouldFocus = true) {
   stopStatsTimer();
   const previousPassageId = state.passage?.id ?? state.previousPassageId;
-  const passage = selectPassage(
-    PASSAGES,
-    state.settings.difficulty,
-    state.settings.lengthBand,
-    previousPassageId
-  );
+  const passage = state.settings.mode === 'code'
+    ? selectSnippet({
+      language: state.settings.language,
+      difficulty: state.settings.difficulty,
+      category: state.settings.category,
+      previousId: previousPassageId
+    })
+    : selectPassage(
+      PASSAGES,
+      state.settings.difficulty,
+      state.settings.lengthBand,
+      previousPassageId
+    );
   currentRunIsTargetedRetry = false;
   startPassage(passage, shouldFocus);
 }
@@ -44,6 +52,7 @@ function startPassage(passage, shouldFocus = true) {
 }
 
 export function startTargetedRetry() {
+  if (state.settings.mode === 'code') return false;
   const text = buildTargetedRetry(state.history);
   if (!text) return false;
   currentRunIsTargetedRetry = true;
@@ -66,8 +75,6 @@ function tickStats() {
 }
 
 function recordPeakWpm(wpm, now) {
-  // Very short samples create meaningless four-digit spikes. Peak telemetry
-  // begins after one second, while final WPM is always included on completion.
   if (state.startedAt && now - state.startedAt >= 1000) {
     state.peakWpm = Math.max(state.peakWpm, wpm);
   }
@@ -97,6 +104,14 @@ function handleBackspace() {
   ui.setStatus('Error cleared. Retry the highlighted character.', 'active');
 }
 
+function handleTabIndent() {
+  if (state.settings.mode !== 'code') return false;
+  const remaining = state.passage.text.slice(state.currentIndex);
+  if (!remaining.startsWith('    ')) return false;
+  for (let index = 0; index < 4 && state.finishedAt === null; index += 1) handleCharacter(' ');
+  return true;
+}
+
 function finishTest() {
   if (state.finishedAt === null) return;
   state.isActive = false;
@@ -114,17 +129,20 @@ function finishTest() {
     accuracy,
     difficulty: state.settings.difficulty,
     lengthBand: state.settings.lengthBand,
+    mode: state.settings.mode,
+    language: state.settings.mode === 'code' ? state.settings.language : null,
+    category: state.settings.mode === 'code' ? state.settings.category : 'all',
     completedAt,
     isTargetedRetry: currentRunIsTargetedRetry,
     mistakes: state.mistakes
   });
 
-  const insights = currentRunIsTargetedRetry ? [] : buildInsights(state.history);
+  const insights = currentRunIsTargetedRetry || state.settings.mode === 'code' ? [] : buildInsights(state.history);
 
   ui.updateStats(state, state.finishedAt);
   ui.setStatus('Passage complete. Telemetry archived.', 'complete');
   ui.renderLog(state.history);
-  ui.showResultModal({ finalWpm, peakWpm, accuracy, timeTakenMs, insights, canOfferRetry: !currentRunIsTargetedRetry && insights.length > 0 });
+  ui.showResultModal({ finalWpm, peakWpm, accuracy, timeTakenMs, insights, canOfferRetry: state.settings.mode === 'prose' && !currentRunIsTargetedRetry && insights.length > 0 });
 }
 
 export function handleKeyDown(event) {
@@ -144,6 +162,12 @@ export function handleKeyDown(event) {
   if (event.key === 'Backspace') {
     event.preventDefault();
     handleBackspace();
+  } else if (state.settings.mode === 'code' && event.key === 'Enter') {
+    event.preventDefault();
+    handleCharacter('\n');
+  } else if (state.settings.mode === 'code' && event.key === 'Tab') {
+    event.preventDefault();
+    if (!handleTabIndent()) handleCharacter('\t');
   } else if ([...event.key].length === 1) {
     event.preventDefault();
     handleCharacter(event.key);
