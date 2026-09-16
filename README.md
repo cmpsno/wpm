@@ -12,6 +12,10 @@ A polished, dependency-free typing test with a retro terminal interface. Practic
 
 The application itself is static and can also be served by any standard static web server.
 
+## C++ practice curriculum
+
+Start with [easy/E0-hello-and-build](easy/E0-hello-and-build). Problems are single-file C++17 exercises with objective stdout tests; run `tools/run_tests.sh <problem-directory>` to check a reference solution. See [ROADMAP.md](ROADMAP.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Modes
 
 - **Prose** uses locally stored, verbatim excerpts from public-domain works sourced through Project Gutenberg.
