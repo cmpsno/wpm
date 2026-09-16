@@ -34,5 +34,5 @@ createServer(async (request, response) => {
     response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Not found');
   }
 }).listen(port, '127.0.0.1', () => {
-  console.log(`Terminal Velocity is running at http://127.0.0.1:${port}`);
+  console.log(`Cadence is running at http://127.0.0.1:${port}`);
 });

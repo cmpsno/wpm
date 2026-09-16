@@ -46,7 +46,7 @@ function startPassage(passage, shouldFocus = true) {
   ui.hideResultModal();
   ui.buildPassage(passage);
   ui.renderPassageState(state);
-  ui.resetGaugeAndStats();
+  ui.resetStats();
   ui.renderLog(state.history);
   if (shouldFocus) ui.focusTypingArea();
 }
@@ -63,7 +63,8 @@ export function startTargetedRetry() {
 function startStatsTimer() {
   if (state.isActive) return;
   state.isActive = true;
-  ui.setStatus('Telemetry capture active.', 'active');
+  document.body.classList.add('is-running');
+  ui.setStatus('Keep your rhythm.', 'active');
   statsTimer = setInterval(tickStats, 100);
 }
 
@@ -140,14 +141,14 @@ function finishTest() {
   const insights = currentRunIsTargetedRetry || state.settings.mode === 'code' ? [] : buildInsights(state.history);
 
   ui.updateStats(state, state.finishedAt);
-  ui.setStatus('Passage complete. Telemetry archived.', 'complete');
+  ui.setStatus('Passage complete. Run saved.', 'complete');
   ui.renderLog(state.history);
   ui.showResultModal({ finalWpm, peakWpm, accuracy, timeTakenMs, insights, canOfferRetry: state.settings.mode === 'prose' && !currentRunIsTargetedRetry && insights.length > 0 });
 }
 
 export function handleKeyDown(event) {
   const activeElement = document.activeElement;
-  if (activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(activeElement.tagName)) return;
+  if (activeElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON', 'A', 'SUMMARY'].includes(activeElement.tagName)) return;
 
   if (state.finishedAt !== null) {
     if (event.key === 'Enter') {
@@ -165,7 +166,7 @@ export function handleKeyDown(event) {
   } else if (state.settings.mode === 'code' && event.key === 'Enter') {
     event.preventDefault();
     handleCharacter('\n');
-  } else if (state.settings.mode === 'code' && event.key === 'Tab') {
+  } else if (state.settings.mode === 'code' && event.key === 'Tab' && !event.shiftKey && activeElement?.id === 'passageStream') {
     event.preventDefault();
     if (!handleTabIndent()) handleCharacter('\t');
   } else if ([...event.key].length === 1) {

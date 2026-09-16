@@ -12,7 +12,6 @@ const categoryGroup = document.getElementById('categoryGroup');
 const passageLengthGroup = document.getElementById('passageLengthGroup');
 const resetButton = document.getElementById('resetButton');
 const resultRestartButton = document.getElementById('resultRestartButton');
-const resultModal = document.getElementById('resultModal');
 const passageStream = document.getElementById('passageStream');
 const practiceMistakesButton = document.getElementById('practiceMistakesButton');
 
@@ -69,4 +68,3 @@ resetButton.addEventListener('click', () => resetTest());
 resultRestartButton.addEventListener('click', () => resetTest());
 practiceMistakesButton.addEventListener('click', () => startTargetedRetry());
 passageStream.addEventListener('click', () => passageStream.focus({ preventScroll: true }));
-resultModal.addEventListener('cancel', (event) => event.preventDefault());
