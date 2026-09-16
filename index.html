@@ -3,33 +3,22 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#07110d">
-    <meta name="description" content="typing speed test">
-    <title>Terminal V </title>
+    <meta name="theme-color" content="#131416">
+    <meta name="description" content="A quiet space to practice typing. Build speed, accuracy, and rhythm with prose and code.">
+    <title>Cadence — Find your rhythm</title>
     <link rel="stylesheet" href="./styles/main.css">
   </head>
   <body>
     <a class="skip-link" href="#typingDeck">Skip to typing test</a>
-    <div class="scanlines" aria-hidden="true"></div>
-
     <header class="site-header">
-      <a class="brand" href="#typingDeck" aria-label="Terminal Velocity home">
-        <span class="brand__prompt" aria-hidden="true">&gt;_</span>
-        <span>TERMINAL<span class="brand__accent">VELOCITY</span></span>
-      </a>
-      <p class="system-status"><span aria-hidden="true"></span> SYSTEM READY</p>
+      <a class="brand" href="#typingDeck" aria-label="Cadence home"><span class="brand-mark" aria-hidden="true">≋</span> cadence<span class="brand-dot">.</span></a>
+      <span class="header-note">Find your rhythm.</span>
     </header>
-
     <main class="shell">
-      <section class="hero" aria-labelledby="pageTitle">
-        <p class="eyebrow">// INPUT DIAGNOSTIC 01</p>
-        <h1 id="pageTitle">can<br><em>you think?</em></h1>
-        <p class="hero__copy">Every letter, space, and mark is telemetry.</p>
-      </section>
-
+      <h1 class="sr-only">Cadence typing practice</h1>
       <section class="control-bar" aria-label="Test settings">
         <div class="control-group">
-          <label for="modeSelect">MODE</label>
+          <label for="modeSelect">Mode</label>
           <div class="select-wrap">
             <select id="modeSelect">
               <option value="prose">Prose</option>
@@ -38,7 +27,7 @@
           </div>
         </div>
         <div class="control-group" id="languageGroup" hidden>
-          <label for="languageSelect">LANGUAGE</label>
+          <label for="languageSelect">Language</label>
           <div class="select-wrap">
             <select id="languageSelect">
               <option value="cpp">C++</option>
@@ -47,7 +36,7 @@
           </div>
         </div>
         <div class="control-group">
-          <label for="difficultySelect">DIFFICULTY</label>
+          <label for="difficultySelect">Difficulty</label>
           <div class="select-wrap">
             <select id="difficultySelect">
               <option value="easy">Easy</option>
@@ -57,7 +46,7 @@
           </div>
         </div>
         <div class="control-group" id="categoryGroup" hidden>
-          <label for="categorySelect">CATEGORY</label>
+          <label for="categorySelect">Category</label>
           <div class="select-wrap">
             <select id="categorySelect">
               <option value="all">All</option>
@@ -65,7 +54,7 @@
           </div>
         </div>
         <div class="control-group" id="passageLengthGroup">
-          <label for="passageLengthSelect">PASSAGE LENGTH</label>
+          <label for="passageLengthSelect">Length</label>
           <div class="select-wrap">
             <select id="passageLengthSelect">
               <option value="short">Short</option>
@@ -75,19 +64,19 @@
           </div>
         </div>
         <button class="button button--ghost" id="resetButton" type="button">
-          <span aria-hidden="true">↻</span> NEW RUN
+          <span aria-hidden="true">↻</span> New passage
         </button>
       </section>
 
       <section class="typing-deck" id="typingDeck" aria-labelledby="testHeading">
         <div class="deck-header">
-          <div>
-            <p class="eyebrow">ACTIVE BUFFER</p>
-            <h2 id="testHeading">TYPE SEQUENCE</h2>
-          </div>
-          <p class="key-hint"><kbd>BACKSPACE</kbd> CLEARS ERRORS</p>
+          <h2 id="testHeading">Typing practice</h2>
+          <dl class="live-stats" aria-label="Live statistics">
+            <div><dt>WPM</dt><dd id="wpmValue">0</dd></div>
+            <div><dt>Accuracy</dt><dd id="accuracyValue">100%</dd></div>
+            <div><dt>Time</dt><dd id="timeValue">0:00</dd></div>
+          </dl>
         </div>
-
         <div class="passage-stream" id="passageStream" role="region" aria-label="Passage to type" tabindex="0">
           <p class="passage-track" id="passageTrack"></p>
         </div>
@@ -99,73 +88,39 @@
         <p class="run-status" id="runStatus" aria-live="polite">Start typing when ready.</p>
       </section>
 
-      <section class="telemetry" aria-label="Live statistics">
-        <article class="gauge-panel">
-          <p class="eyebrow">LIVE OUTPUT</p>
-          <div class="gauge" aria-label="Current words per minute">
-            <div class="gauge__ticks" aria-hidden="true">
-              <span>0</span><span>75</span><span>150</span>
-            </div>
-            <div class="gauge__arc"></div>
-            <div class="gauge__needle" id="wpmNeedle"></div>
-            <div class="gauge__hub"></div>
-            <div class="gauge__readout"><strong id="wpmValue">0</strong><span>WPM</span></div>
-          </div>
-        </article>
-
-        <div class="stat-grid">
-          <article class="stat-card">
-            <p>ACCURACY</p>
-            <strong id="accuracyValue">100%</strong>
-            <span>VALID INPUT</span>
-          </article>
-          <article class="stat-card">
-            <p>ELAPSED</p>
-            <strong id="timeValue">0:00</strong>
-            <span>SESSION TIME</span>
-          </article>
-          <article class="stat-card stat-card--wide">
-            <p>PROTOCOL</p>
-            <strong>5 CHARS = 1 WORD</strong>
-            <span>WPM CALCULATION</span>
-          </article>
-        </div>
-      </section>
+    <section class="result-modal" id="resultModal" aria-labelledby="resultTitle" hidden>
+      <div class="modal__body">
+        <p class="eyebrow">Practice complete</p>
+        <h2 id="resultTitle" tabindex="-1">Your rhythm, measured.</h2>
+        <dl class="modal__stats" id="resultStats"></dl>
+        <section class="modal__insights" aria-labelledby="insightsTitle">
+          <h3 id="insightsTitle">What to practice</h3>
+          <ul id="resultInsights"></ul>
+        </section>
+        <button class="button button--ghost" id="practiceMistakesButton" type="button" hidden>Practice mistakes</button>
+        <button class="button button--primary" id="resultRestartButton" type="button">Try again <span aria-hidden="true">↵</span></button>
+        <p class="modal__hint">Press Enter to restart</p>
+      </div>
+    </section>
 
       <section class="log" id="logSection" aria-labelledby="logHeading" hidden>
         <div class="section-heading">
           <div>
-            <p class="eyebrow">LOCAL ARCHIVE</p>
-            <h2 id="logHeading">RUN LOG</h2>
+            <p class="eyebrow">Your progress</p>
+            <h2 id="logHeading">Recent runs</h2>
           </div>
-          <span>LAST 20</span>
+          <span>Last 20</span>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th scope="col">DATE</th><th scope="col">WPM</th><th scope="col">ACCURACY</th><th scope="col">MODE</th><th scope="col">ERRORS</th></tr></thead>
+            <thead><tr><th scope="col">Date</th><th scope="col">WPM</th><th scope="col">Accuracy</th><th scope="col">Mode</th><th scope="col">Errors</th></tr></thead>
             <tbody id="logBody"></tbody>
           </table>
         </div>
       </section>
     </main>
 
-    <footer><span>LOCAL PROCESS // NO DATA TRANSMITTED</span><span>BUILD 1.1.0</span></footer>
-
-    <dialog class="result-modal" id="resultModal" aria-labelledby="resultTitle">
-      <div class="modal__terminal-bar"><span></span><span></span><span></span><code>run_complete.log</code></div>
-      <div class="modal__body">
-        <p class="eyebrow">SEQUENCE COMPLETE</p>
-        <h2 id="resultTitle">Run telemetry</h2>
-        <dl class="modal__stats" id="resultStats"></dl>
-        <section class="modal__insights" aria-labelledby="insightsTitle">
-          <h3 id="insightsTitle">MISTAKE PATTERNS</h3>
-          <ul id="resultInsights"></ul>
-        </section>
-        <button class="button button--ghost" id="practiceMistakesButton" type="button" hidden>PRACTICE MISTAKES</button>
-        <button class="button button--primary" id="resultRestartButton" type="button">RUN AGAIN <span aria-hidden="true">↵</span></button>
-        <p class="modal__hint">Press Enter to restart</p>
-      </div>
-    </dialog>
+    <footer><span>Practice at your pace.</span><span>Saved on this device · WPM uses 5 characters per word</span></footer>
 
     <script type="module" src="./scripts/main.js"></script>
   </body>

@@ -1,8 +1,8 @@
-# Terminal Velocity
+# Cadence
 
 [play now](https://isaiahcampusano.github.io/wpm-/)
 
-A polished, dependency-free typing test with a retro terminal interface. Practice public-domain prose passages or switch to structured C++ and Python code snippets while keeping the same WPM, accuracy, and error telemetry.
+A dependency-free typing instrument with a quiet monochrome interface, compact live stats, and ice-blue accents. Practice public-domain prose passages or switch to structured C++ and Python code snippets while keeping the same WPM, accuracy, and mistake feedback.
 
 ## Run locally
 
@@ -23,11 +23,14 @@ Start with [easy/E0-hello-and-build](easy/E0-hello-and-build). Problems are sing
 - Code mode preserves punctuation, newlines, and indentation. Press **Enter** for a newline and **Tab** when the next expected indentation is four spaces.
 - Code tokenization recognizes common multi-character operators such as `::`, `<<`, `++`, `<=`, `**`, and `//`, while typing correctness remains character-by-character.
 
+Settings fade during a run and return on hover or keyboard focus. Prose uses a three-line viewport; code keeps indentation in a taller viewport. Results appear inline.
+
 ## Controls
 
 - Type every character in the active passage or snippet, including spaces and punctuation.
 - An incorrect key blocks progress and counts against accuracy immediately.
 - Press **Backspace** to clear the current error; correct progress is locked in.
+- In code mode, **Shift+Tab** leaves the typing area to reach settings.
 - Press **Enter** on the results screen to start a new run.
 - Changing mode, language, difficulty, category, or passage length starts a fresh run and saves the selection locally.
 

@@ -1,8 +1,6 @@
 import { calcAccuracy, calcWPM, formatDate, formatTime } from './stats.js';
-import { getRunsChronological } from './state.js';
+import { state, getRunsChronological } from './state.js';
 
-const GAUGE_MAX = 150;
-const GAUGE_REDLINE = 120;
 
 const el = {
   passageTrack: document.getElementById('passageTrack'),
@@ -11,7 +9,6 @@ const el = {
   progressFill: document.getElementById('progressFill'),
   runStatus: document.getElementById('runStatus'),
   wpmValue: document.getElementById('wpmValue'),
-  wpmNeedle: document.getElementById('wpmNeedle'),
   accuracyValue: document.getElementById('accuracyValue'),
   timeValue: document.getElementById('timeValue'),
   resultModal: document.getElementById('resultModal'),
@@ -23,6 +20,7 @@ const el = {
 };
 
 export function buildPassage(passage) {
+  el.passageStream.classList.toggle('passage-stream--code', state.settings.mode === 'code');
   const characters = [...passage.text].map((character, index) => {
     const span = document.createElement('span');
     span.className = 'char char--untyped';
@@ -33,6 +31,7 @@ export function buildPassage(passage) {
   el.passageTrack.replaceChildren(...characters);
   el.passageAttribution.textContent = `${passage.title} — ${passage.author}`;
   el.passageStream.scrollTop = 0;
+  el.passageStream.scrollLeft = 0;
 }
 
 export function renderPassageState(gameState) {
@@ -53,7 +52,18 @@ export function renderPassageState(gameState) {
 
   const current = el.passageTrack.querySelector('.char--current');
   if (current) {
-    requestAnimationFrame(() => current.scrollIntoView({ block: 'center', inline: 'nearest' }));
+    requestAnimationFrame(() => {
+      if (!current.isConnected) return;
+      const stream = el.passageStream;
+      const lineHeight = parseFloat(getComputedStyle(el.passageTrack).lineHeight);
+      const rect = current.getBoundingClientRect();
+      const bounds = stream.getBoundingClientRect();
+      const top = rect.top - bounds.top + stream.scrollTop;
+      if (rect.right > bounds.right - 8) stream.scrollLeft += rect.right - bounds.right + 24;
+      else if (rect.left < bounds.left) stream.scrollLeft += rect.left - bounds.left - 8;
+      const target = Math.max(0, Math.floor(top / lineHeight) * lineHeight - lineHeight);
+      if (Math.abs(stream.scrollTop - target) > 2) stream.scrollTo({ top: target, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+    });
   }
 }
 
@@ -69,20 +79,16 @@ export function updateStats(gameState, now) {
   el.wpmValue.textContent = String(wpm);
   el.accuracyValue.textContent = `${accuracy}%`;
   el.timeValue.textContent = formatTime(elapsed);
-  const rotation = -180 + (Math.min(wpm, GAUGE_MAX) / GAUGE_MAX) * 180;
-  el.wpmNeedle.style.setProperty('--rotation', `${rotation}deg`);
-  el.wpmNeedle.classList.toggle('gauge__needle--redline', wpm >= GAUGE_REDLINE);
   return wpm;
 }
 
-export function resetGaugeAndStats() {
+export function resetStats() {
   el.wpmValue.textContent = '0';
   el.accuracyValue.textContent = '100%';
   el.timeValue.textContent = '0:00';
-  el.wpmNeedle.style.setProperty('--rotation', '-180deg');
-  el.wpmNeedle.classList.remove('gauge__needle--redline');
   el.progressFill.style.width = '0%';
-  setStatus('Start typing when ready.');
+  document.body.classList.remove('is-running');
+  setStatus('Start typing when ready. Backspace clears errors.');
 }
 
 export function setStatus(message, tone = 'neutral') {
@@ -124,11 +130,15 @@ export function showResultModal({ finalWpm, peakWpm, accuracy, timeTakenMs, insi
     })
     : [Object.assign(document.createElement('li'), { textContent: 'Complete more runs to identify recurring patterns.' })]));
   el.practiceMistakesButton.hidden = !canOfferRetry;
-  if (!el.resultModal.open) el.resultModal.showModal();
+  document.body.classList.remove('is-running');
+  document.getElementById('typingDeck').hidden = true;
+  el.resultModal.hidden = false;
+  document.getElementById('resultTitle').focus({ preventScroll: true });
 }
 
 export function hideResultModal() {
-  if (el.resultModal.open) el.resultModal.close();
+  el.resultModal.hidden = true;
+  document.getElementById('typingDeck').hidden = false;
 }
 
 export function renderLog(history) {
