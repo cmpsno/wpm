@@ -1,0 +1,4 @@
+Sum: 30
+Min: 6
+Max: 6
+Average: 6.0

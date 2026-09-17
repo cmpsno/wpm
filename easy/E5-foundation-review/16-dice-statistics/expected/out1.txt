@@ -1,0 +1,4 @@
+Sum: 15
+Min: 1
+Max: 5
+Average: 3.0

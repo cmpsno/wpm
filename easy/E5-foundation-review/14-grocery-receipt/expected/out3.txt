@@ -1,0 +1,3 @@
+Subtotal: 6.66
+Tax: 0.33
+Total: 6.99

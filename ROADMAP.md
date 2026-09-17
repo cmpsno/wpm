@@ -6,7 +6,7 @@ The curriculum moves from hello world to idiomatic C++ through recognition, reca
 
 - [x] E0 — Hello, World & Compilation (10 problems)
 - [ ] E1–E4 — Variables/I/O, conditionals, loops, and functions (10 problems each)
-- [ ] Foundation review — 5 mixed application problems, after E0–E4
+- [ ] E5 — Foundation review (20 mixed application problems, after E0–E4; Easy total: 70)
 
 ## Numbered steps
 

@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CODE_SNIPPETS, getCategories, selectSnippet, tokenizeCode } from '../scripts/snippets.js';
 
-test('ships five C++ and five Python snippets', () => {
-  assert.equal(CODE_SNIPPETS.filter(({ language }) => language === 'cpp').length, 5);
+test('ships 25 C++ and five Python snippets', () => {
+  assert.equal(CODE_SNIPPETS.filter(({ language }) => language === 'cpp').length, 25);
   assert.equal(CODE_SNIPPETS.filter(({ language }) => language === 'python').length, 5);
 });
 
@@ -30,6 +30,7 @@ test('tokenizer keeps common multi-character operators together', () => {
 test('categories are scoped by language and difficulty', () => {
   assert.deepEqual(getCategories('cpp', 'hard'), ['stl']);
   assert.deepEqual(getCategories('python', 'easy'), ['loops', 'variables']);
+  assert.deepEqual(getCategories('cpp', 'easy'), ['foundation-review', 'loops', 'variables']);
 });
 
 test('snippet selection filters by language difficulty and category', () => {
@@ -37,6 +38,10 @@ test('snippet selection filters by language difficulty and category', () => {
   assert.equal(snippet.id, 'python-functions-01');
   assert.equal(snippet.language, 'python');
   assert.equal(snippet.category, 'functions');
+
+  const e5 = selectSnippet({ language: 'cpp', difficulty: 'easy', category: 'foundation-review', random: () => 0 });
+  assert.equal(e5.id, 'cpp-e5-01-health-bar');
+  assert.match(e5.code, /current \* 10/u);
 });
 
 test('invalid snippet combinations fail clearly', () => {

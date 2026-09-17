@@ -1,0 +1,3 @@
+Subtotal: 1.00
+Tax: 0.00
+Total: 1.00
