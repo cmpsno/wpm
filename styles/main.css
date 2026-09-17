@@ -50,7 +50,13 @@ select:focus { color: var(--accent); }
 .passage-stream { position: relative; font-size: clamp(20px, 2.5vw, 26px); line-height: 1.9; height: 5.7em; margin: 46px 0 24px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .passage-track { margin: 0; font: inherit; font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .passage-stream--code { height: 13.3em; font-size: clamp(15px, 1.9vw, 20px); }
-.passage-stream--code .passage-track { white-space: pre; overflow-wrap: normal; tab-size: 4; }
+.passage-stream--code .passage-track {
+  /* Preserve authored indentation and newlines, while wrapping long code at whitespace. */
+  white-space: pre-wrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  tab-size: 4;
+}
 .char { position: relative; }
 .char--untyped { color: #858891; }
 .char--correct { color: var(--text); }
