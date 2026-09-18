@@ -49,9 +49,13 @@ select:focus { color: var(--accent); }
 .live-stats dd { margin: 0; font-family: var(--mono); font-size: 23px; letter-spacing: -.05em; }
 .passage-stream { position: relative; font-size: clamp(20px, 2.5vw, 26px); line-height: 1.9; height: 5.7em; margin: 46px 0 24px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .passage-track { margin: 0; font: inherit; font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.passage-stream--code { height: 13.3em; font-size: clamp(15px, 1.9vw, 20px); }
+.passage-stream--code { height: 13.3em; font-size: clamp(15px, 1.9vw, 20px); overflow-x: auto; /* safety net: an unbreakable single token (e.g. a 200-char string literal) can still overflow, so contain it instead of breaking page layout */ }
 .passage-stream--code .passage-track {
-  /* Preserve authored indentation and newlines, while wrapping long code at whitespace. */
+  /* Preserve authored indentation and newlines, but wrap long code lines at
+     whitespace. Deliberately `overflow-wrap: normal` (not `anywhere` like the
+     prose rule above): breaking tokens mid-identifier (`std::cout` -> `std::co`
+     / `ut`) would corrupt the typing target. Tokens longer than the container
+     are contained by the `overflow-x: auto` safety net above, not split. */
   white-space: pre-wrap;
   overflow-wrap: normal;
   word-break: normal;

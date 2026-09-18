@@ -26,6 +26,7 @@ Start with [easy/E0-hello-and-build](easy/E0-hello-and-build). Problems are sing
 - **Code** includes C++ and Python snippets organized by difficulty and category.
 - Code mode preserves punctuation, newlines, and indentation. Press **Enter** for a newline and **Tab** when the next expected indentation is four spaces.
 - Code tokenization recognizes common multi-character operators such as `::`, `<<`, `++`, `<=`, `**`, and `//`, while typing correctness remains character-by-character.
+- Code passages soft-wrap by design: long lines wrap at whitespace so tokens like `std::cout` stay intact, and indentation is preserved. A single token longer than the viewport gets a horizontal scrollbar inside the passage area rather than breaking the page.
 
 Settings fade during a run and return on hover or keyboard focus. Prose uses a three-line viewport; code keeps indentation in a taller viewport. Results appear inline.
 
