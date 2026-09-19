@@ -10,7 +10,9 @@ import {
   severityScore,
   DIAGNOSIS_PRECEDENCE,
   MAX_DIAGNOSES,
-  summarizeFingerDrift
+  summarizeFingerDrift,
+  FINGER_KEY_MAP,
+  assertFingerMapIsDisjoint
 } from '../scripts/errorClassification.js';
 
 test('finger map covers the QWERTY home rows and thumbs', () => {
@@ -23,6 +25,44 @@ test('finger map covers the QWERTY home rows and thumbs', () => {
   assert.equal(fingerForKey(' '), 'thumb');
   assert.equal(fingerForKey('?'), null);
   assert.equal(fingerForKey('ab'), null);
+});
+
+test('every mapped key resolves to exactly one finger', () => {
+  // Independent copy of the intended assignment. Keep in sync with source.
+  const EXPECTED = {
+    q: 'leftPinky', a: 'leftPinky', z: 'leftPinky',
+    w: 'leftRing', s: 'leftRing', x: 'leftRing',
+    e: 'leftMiddle', d: 'leftMiddle', c: 'leftMiddle',
+    r: 'leftIndex', t: 'leftIndex', f: 'leftIndex', g: 'leftIndex', v: 'leftIndex', b: 'leftIndex',
+    y: 'rightIndex', u: 'rightIndex', h: 'rightIndex', j: 'rightIndex', n: 'rightIndex', m: 'rightIndex',
+    i: 'rightMiddle', k: 'rightMiddle',
+    o: 'rightRing', l: 'rightRing',
+    p: 'rightPinky', ';': 'rightPinky', '/': 'rightPinky',
+    ' ': 'thumb',
+  };
+  for (const [key, finger] of Object.entries(EXPECTED)) {
+    assert.equal(fingerForKey(key), finger, `fingerForKey(${JSON.stringify(key)})`);
+  }
+});
+
+test('no key is claimed by two fingers', () => {
+  // Walk FINGER_KEY_MAP directly, not through KEY_TO_FINGER, so a silent
+  // last-write-wins overwrite cannot hide behind the lookup table.
+  const seen = new Map();
+  for (const [finger, keys] of Object.entries(FINGER_KEY_MAP)) {
+    for (const key of keys) {
+      assert.ok(!seen.has(key), `key ${JSON.stringify(key)} appears in both ${seen.get(key)} and ${finger}`);
+      seen.set(key, finger);
+    }
+  }
+});
+
+test('assertFingerMapIsDisjoint throws on a conflicting map', () => {
+  assert.throws(
+    () => assertFingerMapIsDisjoint({ leftIndex: ['r'], rightPinky: ['r'] }),
+    /FINGER_KEY_MAP conflict for key "r": leftIndex vs rightPinky/
+  );
+  assert.doesNotThrow(() => assertFingerMapIsDisjoint(FINGER_KEY_MAP));
 });
 
 test('keyboard distance is Chebyshev distance on the QWERTY grid', () => {
