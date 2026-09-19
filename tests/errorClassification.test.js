@@ -8,7 +8,11 @@ import {
   keyboardDistance,
   latencyBand,
   severityScore,
-  summarizeFingerDrift
+  DIAGNOSIS_PRECEDENCE,
+  MAX_DIAGNOSES,
+  summarizeFingerDrift,
+  FINGER_KEY_MAP,
+  assertFingerMapIsDisjoint
 } from '../scripts/errorClassification.js';
 
 test('finger map covers the QWERTY home rows and thumbs', () => {
@@ -21,6 +25,44 @@ test('finger map covers the QWERTY home rows and thumbs', () => {
   assert.equal(fingerForKey(' '), 'thumb');
   assert.equal(fingerForKey('?'), null);
   assert.equal(fingerForKey('ab'), null);
+});
+
+test('every mapped key resolves to exactly one finger', () => {
+  // Independent copy of the intended assignment. Keep in sync with source.
+  const EXPECTED = {
+    q: 'leftPinky', a: 'leftPinky', z: 'leftPinky',
+    w: 'leftRing', s: 'leftRing', x: 'leftRing',
+    e: 'leftMiddle', d: 'leftMiddle', c: 'leftMiddle',
+    r: 'leftIndex', t: 'leftIndex', f: 'leftIndex', g: 'leftIndex', v: 'leftIndex', b: 'leftIndex',
+    y: 'rightIndex', u: 'rightIndex', h: 'rightIndex', j: 'rightIndex', n: 'rightIndex', m: 'rightIndex',
+    i: 'rightMiddle', k: 'rightMiddle',
+    o: 'rightRing', l: 'rightRing',
+    p: 'rightPinky', ';': 'rightPinky', '/': 'rightPinky',
+    ' ': 'thumb',
+  };
+  for (const [key, finger] of Object.entries(EXPECTED)) {
+    assert.equal(fingerForKey(key), finger, `fingerForKey(${JSON.stringify(key)})`);
+  }
+});
+
+test('no key is claimed by two fingers', () => {
+  // Walk FINGER_KEY_MAP directly, not through KEY_TO_FINGER, so a silent
+  // last-write-wins overwrite cannot hide behind the lookup table.
+  const seen = new Map();
+  for (const [finger, keys] of Object.entries(FINGER_KEY_MAP)) {
+    for (const key of keys) {
+      assert.ok(!seen.has(key), `key ${JSON.stringify(key)} appears in both ${seen.get(key)} and ${finger}`);
+      seen.set(key, finger);
+    }
+  }
+});
+
+test('assertFingerMapIsDisjoint throws on a conflicting map', () => {
+  assert.throws(
+    () => assertFingerMapIsDisjoint({ leftIndex: ['r'], rightPinky: ['r'] }),
+    /FINGER_KEY_MAP conflict for key "r": leftIndex vs rightPinky/
+  );
+  assert.doesNotThrow(() => assertFingerMapIsDisjoint(FINGER_KEY_MAP));
 });
 
 test('keyboard distance is Chebyshev distance on the QWERTY grid', () => {
@@ -55,6 +97,32 @@ test('latency bands split motor, transition, and cognitive errors', () => {
   assert.equal(latencyBand(-5), 'unknown');
 });
 
+test('latencyBand is relative to a per-user baseline when provided', () => {
+  assert.equal(latencyBand(79, 200), 'motor');      // 79 < 200*0.5
+  assert.equal(latencyBand(100, 200), 'transition'); // exactly at the motor cutoff
+  assert.equal(latencyBand(150, 200), 'transition'); // 150 <= 200*2
+  assert.equal(latencyBand(400, 200), 'transition'); // exactly at the transition cutoff
+  assert.equal(latencyBand(500, 200), 'cognitive');  // 500 > 200*2
+  // Invalid baselines fall back to the absolute 80/400 thresholds.
+  assert.equal(latencyBand(79, null), 'motor');
+  assert.equal(latencyBand(79, 0), 'motor');
+  assert.equal(latencyBand(79, -5), 'motor');
+  assert.equal(latencyBand(90, 100), 'transition');  // 90 >= 100*0.5 under a fast baseline
+  assert.equal(latencyBand(null, 200), 'unknown');
+});
+
+test('severityScore and diagnoseMechanically accept a baseline', () => {
+  const relative = severityScore({ adjacencyDistance: 5, latencyMs: 300, wasCorrected: true, baseline: 100 });
+  const absolute = severityScore({ adjacencyDistance: 5, latencyMs: 300, wasCorrected: true });
+  // 300ms is cognitive against a 100ms baseline but transition against 80/400.
+  assert.ok(relative < absolute, 'baseline-relative band changes the score');
+
+  const driftRelative = diagnoseMechanically({ adjacentRate: 0.5, avgLatencyMs: 90, baseline: 200 });
+  assert.deepEqual(driftRelative.map(({ pattern }) => pattern), ['vertical-finger-drift']);
+  const driftAbsolute = diagnoseMechanically({ adjacentRate: 0.5, avgLatencyMs: 90, baseline: null });
+  assert.deepEqual(driftAbsolute, [], '90ms is not fast against the absolute 80ms threshold');
+});
+
 test('severity scores motor blind spots highest and corrected errors lowest', () => {
   const blindSpot = severityScore({ adjacencyDistance: 1, latencyMs: 40, wasCorrected: false });
   const corrected = severityScore({ adjacencyDistance: 1, latencyMs: 40, wasCorrected: true });
@@ -78,17 +146,179 @@ test('summarizeFingerDrift measures index encroachment from mistakes', () => {
 
 test('diagnoseMechanically fires each rule only past its threshold', () => {
   const overreach = diagnoseMechanically({ sameFingerRate: 0.4, indexEncroachmentRate: 0.3 });
-  assert.deepEqual(overreach.map(({ pattern }) => pattern), ['index-finger-overreach']);
+  assert.equal(overreach[0].pattern, 'index-finger-overreach');
+  assert.equal(overreach[0].primary, true);
+  assert.equal(overreach[0].secondary, false);
 
   const drift = diagnoseMechanically({ adjacentRate: 0.5, avgLatencyMs: 60 });
-  assert.deepEqual(drift.map(({ pattern }) => pattern), ['vertical-finger-drift']);
+  assert.equal(drift[0].pattern, 'vertical-finger-drift');
+  assert.equal(drift[0].primary, true);
 
   const mapping = diagnoseMechanically({ homologousRate: 0.2 });
-  assert.deepEqual(mapping.map(({ pattern }) => pattern), ['hand-mapping-confusion']);
+  assert.equal(mapping[0].pattern, 'hand-mapping-confusion');
+  assert.equal(mapping[0].primary, true);
 
   const load = diagnoseMechanically({ cognitiveRate: 0.25 });
-  assert.deepEqual(load.map(({ pattern }) => pattern), ['high-cognitive-load']);
+  assert.equal(load[0].pattern, 'high-cognitive-load');
+  assert.equal(load[0].primary, true);
 
   assert.deepEqual(diagnoseMechanically({ sameFingerRate: 0.4, indexEncroachmentRate: 0.1 }), []);
   assert.deepEqual(diagnoseMechanically({}), []);
+});
+
+test('diagnoseMechanically marks one primary by precedence', () => {
+  const result = diagnoseMechanically({
+    sameFingerRate: 0.5,
+    indexEncroachmentRate: 0.3,
+    adjacentRate: 0.5,
+    avgLatencyMs: 40,
+    homologousRate: 0.2,
+    cognitiveRate: 0.3,
+  });
+  assert.ok(result.length <= MAX_DIAGNOSES);
+  assert.equal(result[0].pattern, 'hand-mapping-confusion');
+  assert.equal(result[0].primary, true);
+  assert.equal(result[0].secondary, false);
+  assert.equal(result.filter((d) => d.primary).length, 1, 'exactly one primary');
+  if (result[1]) {
+    assert.equal(result[1].secondary, true);
+    assert.equal(result[1].primary, false);
+  }
+});
+
+test('diagnoseMechanically only fires vertical-finger-drift when nothing more specific applies', () => {
+  const result = diagnoseMechanically({ adjacentRate: 0.5, avgLatencyMs: 60 });
+  assert.deepEqual(result.map((d) => d.pattern), ['vertical-finger-drift']);
+  assert.equal(result[0].primary, true);
+  assert.equal(result[0].secondary, false);
+});
+
+test('diagnoseMechanically respects the two-diagnosis cap', () => {
+  const result = diagnoseMechanically({
+    homologousRate: 0.2,
+    sameFingerRate: 0.5,
+    indexEncroachmentRate: 0.3,
+    adjacentRate: 0.5,
+    avgLatencyMs: 40,
+    cognitiveRate: 0.3,
+  });
+  assert.equal(result.length, 2);
+  // Precedence: hand-mapping-confusion (1st), index-finger-overreach (2nd).
+  assert.equal(result[0].pattern, 'hand-mapping-confusion');
+  assert.equal(result[1].pattern, 'index-finger-overreach');
+  assert.equal(result[0].primary, true);
+  assert.equal(result[1].secondary, true);
+});
+
+test('diagnoseMechanically returns no primary when no rule fires', () => {
+  assert.deepEqual(diagnoseMechanically({}), []);
+  assert.deepEqual(diagnoseMechanically({ sameFingerRate: 0.4, indexEncroachmentRate: 0.1 }), []);
+});
+
+test('DIAGNOSIS_PRECEDENCE covers exactly the four known patterns', () => {
+  assert.deepEqual([...DIAGNOSIS_PRECEDENCE], [
+    'hand-mapping-confusion',
+    'index-finger-overreach',
+    'high-cognitive-load',
+    'vertical-finger-drift'
+  ]);
+  assert.equal(MAX_DIAGNOSES, 2);
+});
+
+test('latencyBand handles exact, zero, negative, and non-finite inputs', () => {
+  assert.equal(latencyBand(0), 'motor');
+  assert.equal(latencyBand(1), 'motor');
+  assert.equal(latencyBand(79.999), 'motor');
+  assert.equal(latencyBand(80), 'transition');
+  assert.equal(latencyBand(80.001), 'transition');
+  assert.equal(latencyBand(399.999), 'transition');
+  assert.equal(latencyBand(400), 'transition');
+  assert.equal(latencyBand(400.001), 'cognitive');
+  assert.equal(latencyBand(-1), 'unknown');
+  assert.equal(latencyBand(-0.0001), 'unknown');
+  assert.equal(latencyBand(NaN), 'unknown');
+  // Number.isFinite(Infinity) is false, so non-finite latencies are 'unknown'.
+  assert.equal(latencyBand(Infinity), 'unknown');
+  assert.equal(latencyBand(-Infinity), 'unknown');
+  assert.equal(latencyBand(null), 'unknown');
+  assert.equal(latencyBand(undefined), 'unknown');
+  assert.equal(latencyBand('80'), 'unknown');
+  assert.equal(latencyBand({}), 'unknown');
+  assert.equal(latencyBand([]), 'unknown');
+});
+
+test('latencyBand uses baseline-relative cutoffs when the baseline is valid', () => {
+  // baseline = 200 => motor < 100, transition 100-400, cognitive > 400.
+  // The motor cutoff is exclusive (<) and the transition cutoff inclusive (<=).
+  assert.equal(latencyBand(99, 200), 'motor');
+  assert.equal(latencyBand(100, 200), 'transition');
+  assert.equal(latencyBand(400, 200), 'transition');
+  assert.equal(latencyBand(401, 200), 'cognitive');
+});
+
+test('latencyBand falls back to absolute cutoffs for invalid baselines', () => {
+  for (const baseline of [null, 0, -5, NaN, Infinity]) {
+    assert.equal(latencyBand(79, baseline), 'motor');
+    assert.equal(latencyBand(400.001, baseline), 'cognitive');
+  }
+});
+
+test('classifySubstitution handles non-string and multi-character inputs', () => {
+  const result = classifySubstitution('ab', 'c');
+  assert.deepEqual(result.types, ['other']);
+  assert.equal(result.adjacencyDistance, null);
+  assert.equal(result.expectedFinger, null);
+  // 'c' is a valid single key even though the pair is unclassifiable.
+  assert.equal(result.actualFinger, 'leftMiddle');
+
+  const nullCase = classifySubstitution(null, 'a');
+  assert.deepEqual(nullCase.types, ['other']);
+  assert.equal(nullCase.adjacencyDistance, null);
+
+  const numCase = classifySubstitution(1, 'a');
+  assert.deepEqual(numCase.types, ['other']);
+
+  const emptyCase = classifySubstitution('', '');
+  assert.deepEqual(emptyCase.types, ['other']);
+});
+
+test('classifySubstitution is case-insensitive on input', () => {
+  assert.deepEqual(classifySubstitution('E', 'D').types, classifySubstitution('e', 'd').types);
+  // r is leftIndex, u is rightIndex: a mirror pair.
+  assert.deepEqual(classifySubstitution('R', 'U').types, ['homologous']);
+});
+
+test('unicode keys resolve to no finger and no position', () => {
+  assert.equal(fingerForKey('😀'), null);
+  assert.equal(fingerForKey('é'), null);
+  // Combining mark: two code points, so normalizeKey rejects it outright.
+  assert.equal(fingerForKey('\u0065\u0301'), null);
+  assert.equal(keyboardDistance('😀', 'e'), null);
+  assert.equal(isHomologousPair('😀', 'e'), false);
+});
+
+test('severityScore stays within 0-100 across extremes', () => {
+  assert.ok(severityScore({ adjacencyDistance: 0, latencyMs: 0, wasCorrected: false }) >= 0);
+  const worst = severityScore({ adjacencyDistance: 100, latencyMs: 9999, wasCorrected: true });
+  assert.ok(worst >= 0 && worst <= 100);
+  assert.ok(severityScore({ adjacencyDistance: null, latencyMs: null }) >= 0);
+  const empty = severityScore({});
+  assert.ok(empty >= 0 && empty <= 100);
+});
+
+test('summarizeFingerDrift skips malformed entries without throwing', () => {
+  const result = summarizeFingerDrift([
+    null,
+    undefined,
+    { expected: 'e' },
+    { actual: 'r' },
+    { expected: 'e', actual: 'r' },
+    { expected: null, actual: 'r' },
+    { expected: 'e', actual: null }
+  ]);
+  assert.deepEqual(Object.keys(result).sort(), ['indexEncroachmentRate', 'transitions']);
+  assert.equal(result.transitions.length, 1);
+  assert.equal(result.transitions[0].transition, 'leftMiddle->leftIndex');
+  assert.equal(result.transitions[0].count, 1);
+  assert.equal(result.indexEncroachmentRate, 1);
 });

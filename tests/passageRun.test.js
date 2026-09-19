@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { backspace, createPassageRunState, getContainingWord, typeCharacter, wordPositionInText } from '../scripts/passageRun.js';
+import { backspace, createPassageRunState, getContainingWord, getLatencyBaseline, median, typeCharacter, wordPositionInText } from '../scripts/passageRun.js';
 import { calcAccuracy, calcWPM } from '../scripts/stats.js';
 
 const passage = Object.freeze({ text: 'A, b.' });
@@ -129,4 +129,103 @@ test('completed accuracy retains corrected mistakes and WPM uses correct keys', 
   assert.equal(calcAccuracy(run.correctKeystrokes, run.totalKeystrokes), 67);
   assert.equal(calcWPM(run.correctKeystrokes, run.startedAt, run.finishedAt), 0);
   assert.equal(calcWPM(run.totalKeystrokes, run.startedAt, run.finishedAt), 1);
+});
+
+test('median averages the middle pair and leaves the input untouched', () => {
+  assert.equal(median([5, 1, 3]), 3);
+  assert.equal(median([4, 1, 2, 3]), 2.5);
+  assert.equal(median([]), null);
+  assert.equal(median(null), null);
+  const input = [3, 1, 2];
+  median(input);
+  assert.deepEqual(input, [3, 1, 2]);
+});
+
+test('correctKeystrokeLatencies collects only correct, measurable keystrokes', () => {
+  const run = createPassageRunState({ text: 'abcdef' });
+  typeCharacter(run, 'a', 1_000); // first keystroke: no latency to record
+  typeCharacter(run, 'b', 1_120);
+  typeCharacter(run, 'x', 1_200); // incorrect: locked, must not be recorded
+  backspace(run);
+  typeCharacter(run, 'c', 1_300); // latency spans the error recovery (100ms)
+  assert.deepEqual(run.correctKeystrokeLatencies, [120, 100]);
+});
+
+test('getLatencyBaseline needs 10 samples before returning the median', () => {
+  const run = createPassageRunState({ text: 'abcdefghijk' });
+  assert.equal(getLatencyBaseline(run), null);
+  let now = 1_000;
+  for (const character of 'abcdefghijk') {
+    now += 120;
+    typeCharacter(run, character, now);
+  }
+  // First keystroke had no latency, so 10 samples of 120ms were collected.
+  assert.equal(run.correctKeystrokeLatencies.length, 10);
+  assert.equal(getLatencyBaseline(run), 120);
+  assert.equal(getLatencyBaseline({ correctKeystrokeLatencies: [1, 2, 3] }), null);
+  assert.equal(getLatencyBaseline(null), null);
+});
+
+test('first keystroke of a run records a null latency', () => {
+  const run = createPassageRunState({ text: 'ab' });
+  typeCharacter(run, 'x', 1_000);
+  assert.equal(run.mistakes.length, 1);
+  assert.equal(run.mistakes[0].latencyMs, null);
+});
+
+test('second keystroke latency is measured from the previous accepted keystroke', () => {
+  const run = createPassageRunState({ text: 'ab' });
+  typeCharacter(run, 'a', 1_000);
+  typeCharacter(run, 'x', 1_080);
+  assert.equal(run.mistakes.length, 1);
+  assert.equal(run.mistakes[0].latencyMs, 80);
+});
+
+test('backspace does not reset the inter-keystroke timer', () => {
+  const run = createPassageRunState({ text: 'ab' });
+  typeCharacter(run, 'x', 1_000);
+  backspace(run);
+  assert.equal(run.lastKeystrokeAt, 1_000);
+  typeCharacter(run, 'a', 1_050);
+  typeCharacter(run, 'y', 1_100);
+  assert.equal(run.mistakes.length, 2);
+  // 1_100 - 1_050: measured from the last accepted keystroke, not the backspace.
+  assert.equal(run.mistakes[1].latencyMs, 50);
+});
+
+test('multi-character input is rejected without changing state', () => {
+  const run = createPassageRunState({ text: 'ab' });
+  const before = JSON.parse(JSON.stringify(run));
+  assert.deepEqual(typeCharacter(run, 'ab', 1_000), { accepted: false, correct: false, finished: false });
+  assert.deepEqual(run, before);
+});
+
+test('a single astral-plane character is accepted as one keystroke', () => {
+  // [...'😀'].length === 1, so the length guard lets it through; it is simply
+  // logged as a wrong character with no keyboard position or finger.
+  const run = createPassageRunState({ text: 'a' });
+  assert.deepEqual(typeCharacter(run, '😀', 1_000), { accepted: true, correct: false, finished: false });
+  assert.equal(run.mistakes[0].latencyMs, null);
+});
+
+test('getContainingWord handles tabs, newlines, and multiple spaces', () => {
+  assert.equal(getContainingWord('foo\tbar', 4), 'bar');
+  assert.equal(getContainingWord('foo\nbar', 4), 'bar');
+  assert.equal(getContainingWord('foo   bar', 6), 'bar');
+  // An index on whitespace resolves to the word on its left when the
+  // previous character is a letter, and to '' when it is also whitespace.
+  assert.equal(getContainingWord('foo   bar', 3), 'foo');
+  assert.equal(getContainingWord('foo   bar', 5), '');
+});
+
+test('wordPositionInText handles tab-separated words', () => {
+  assert.equal(wordPositionInText('foo\tbar', 4), 'start');
+  assert.equal(wordPositionInText('foo\tbar', 5), 'middle');
+  assert.equal(wordPositionInText('foo\tbar', 6), 'end');
+});
+
+test('startedAt is set on the first accepted keystroke even if it is wrong', () => {
+  const run = createPassageRunState({ text: 'a' });
+  typeCharacter(run, 'x', 5_000);
+  assert.equal(run.startedAt, 5_000);
 });
