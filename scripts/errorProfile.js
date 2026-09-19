@@ -80,13 +80,61 @@ function getOverallBaseline(runs = []) {
   return median(baselines);
 }
 
+// Per-session rate for a substitution pair: occurrences / totalCharacters.
+// totalCharacters means total keypresses (including backspaced and
+// corrected ones), consistent with how state.totalKeystrokes is recorded.
+export function sessionRate(sessionCount, session) {
+  const total = Number.isInteger(session?.totalCharacters) && session.totalCharacters > 0
+    ? session.totalCharacters
+    : null;
+  if (total === null) return null;
+  return sessionCount / total;
+}
+
+// Improvement test over per-session rates, oldest -> newest. A pair is
+// improving when the newest rate is at most 60% of the oldest rate and at
+// least one middle rate is strictly below the oldest, which guards against
+// a single-session cliff (e.g. 0.10 -> 0.10 -> 0.02) looking like a trend.
+export function isImproving(rates) {
+  if (rates.length < 3) return false;
+  const oldest = rates[0];
+  const newest = rates[rates.length - 1];
+  if (!Number.isFinite(oldest) || !Number.isFinite(newest)) return false;
+  if (oldest === 0) return true;
+  if (!(newest <= oldest * 0.6)) return false;
+  return rates.slice(1, -1).some((rate) => Number.isFinite(rate) && rate < oldest);
+}
+
+function runTimestamp(run) {
+  const fromCompletedAt = Date.parse(run?.completedAt ?? '');
+  if (Number.isFinite(fromCompletedAt)) return fromCompletedAt;
+  const fromDate = Date.parse(run?.date ?? '');
+  if (Number.isFinite(fromDate)) return fromDate;
+  // No timestamp: fall back to best-effort ordering by id string.
+  return typeof run?.id === 'string' ? run.id : '';
+}
+
 // A sticky habit: the same (expected, actual) pair appears in at least 3
 // separate sessions with a stable rate (no decline over time), independent
-// of word context — a motor habit, not spelling uncertainty.
+// of word context — a motor habit, not spelling uncertainty. Runs are
+// sorted oldest-first internally so callers may pass them in any order,
+// including newest-first as stored in state.history.
 export function findStickyHabits(runs = []) {
+  // Never mutate the caller's array.
+  const chronological = [...runs].sort((a, b) => {
+    const ta = runTimestamp(a);
+    const tb = runTimestamp(b);
+    if (typeof ta === 'number' && typeof tb === 'number') return ta - tb;
+    return String(ta).localeCompare(String(tb));
+  });
+
   const sessionsByPair = new Map();
-  runs.forEach((run, runIndex) => {
+  const sessionById = new Map();
+  chronological.forEach((run, runIndex) => {
+    // The index is from the sorted array so synthetic ids are stable
+    // regardless of the caller's input order.
     const sessionId = run?.id ?? `run-index-${runIndex}`;
+    sessionById.set(sessionId, run);
     for (const mistake of mistakesIn([run])) {
       if (typeof mistake?.expected !== 'string' || typeof mistake?.actual !== 'string') continue;
       const pair = JSON.stringify([mistake.expected, mistake.actual]);
@@ -98,17 +146,27 @@ export function findStickyHabits(runs = []) {
   const habits = [];
   for (const [pair, sessions] of sessionsByPair) {
     if (sessions.size < 3) continue;
-    const counts = [...sessions.values()];
-    const latest = counts[counts.length - 1];
-    const earliest = counts[0];
-    const declining = latest < earliest * 0.5;
-    if (declining) continue;
+    // Map insertion order matches chronological iteration, so this
+    // reconstructs the pair's history oldest -> newest.
+    const ordered = [...sessions.entries()].map(([sessionId, count]) => ({
+      count,
+      rate: sessionRate(count, sessionById.get(sessionId))
+    }));
+    // Sessions without a usable denominator are excluded from the trend
+    // but still count toward sessions.size. Without at least 3 usable
+    // rates there is no trend to assess, so the pair is not sticky.
+    const usable = ordered.filter((entry) => Number.isFinite(entry.rate));
+    if (usable.length < 3) continue;
+    const windowed = usable.slice(-5);
+    const rates = windowed.map((entry) => entry.rate);
+    if (isImproving(rates)) continue;
     const [expected, actual] = JSON.parse(pair);
     habits.push({
       expected,
       actual,
       sessions: sessions.size,
-      totalCount: counts.reduce((sum, count) => sum + count, 0)
+      totalCount: ordered.reduce((sum, entry) => sum + entry.count, 0),
+      rates
     });
   }
   return habits.sort((a, b) => b.sessions - a.sessions || b.totalCount - a.totalCount);
