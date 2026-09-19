@@ -3,26 +3,13 @@ import assert from 'node:assert/strict';
 import { buildErrorProfile, buildSubstitutionMatrix, findStickyHabits, isImproving, sessionRate } from '../scripts/errorProfile.js';
 import { DEFAULT_SETTINGS, STORAGE_KEY, loadState, state } from '../scripts/state.js';
 import { MemoryStorage } from './helpers/memoryStorage.js';
-
-const mistake = (expected, actual, overrides = {}) => ({
-  expected,
-  actual,
-  word: 'word',
-  characterIndex: 0,
-  timestamp: 1_000,
-  latencyMs: 45,
-  prevChar: null,
-  nextChar: null,
-  positionInWord: 'middle',
-  wasCorrected: false,
-  ...overrides
-});
+import { makeChronologicalRuns, makeMistake, makeRun } from './helpers/fixtures.js';
 
 test('buildSubstitutionMatrix counts pairs and averages latency', () => {
   const matrix = buildSubstitutionMatrix([
-    mistake('e', 'w', { latencyMs: 40 }),
-    mistake('e', 'w', { latencyMs: 60 }),
-    mistake('e', 'r', { latencyMs: 200 })
+    makeMistake('e', 'w', { latencyMs: 40 }),
+    makeMistake('e', 'w', { latencyMs: 60 }),
+    makeMistake('e', 'r', { latencyMs: 200 })
   ]);
   assert.equal(matrix.e.w.count, 2);
   assert.equal(matrix.e.w.avgLatencyMs, 50);
@@ -35,14 +22,14 @@ test('buildSubstitutionMatrix skips malformed mistakes', () => {
 });
 
 test('buildErrorProfile aggregates distributions, rates, and diagnoses', () => {
-  const runs = [{
+  const runs = [makeRun({
     id: 'run-1',
     mistakes: [
-      mistake('e', 'w', { latencyMs: 40, positionInWord: 'start', wasCorrected: true }),
-      mistake('e', 'w', { latencyMs: 50, positionInWord: 'middle' }),
-      mistake('e', 'd', { latencyMs: 900, positionInWord: 'end' })
+      makeMistake('e', 'w', { latencyMs: 40, positionInWord: 'start', wasCorrected: true }),
+      makeMistake('e', 'w', { latencyMs: 50, positionInWord: 'middle' }),
+      makeMistake('e', 'd', { latencyMs: 900, positionInWord: 'end' })
     ]
-  }];
+  })];
   const profile = buildErrorProfile(runs);
   assert.equal(profile.runsAnalyzed, 1);
   assert.equal(profile.totalMistakes, 3);
@@ -74,14 +61,9 @@ test('buildErrorProfile on empty input returns zeroed rates and no diagnoses', (
 });
 
 test('findStickyHabits flags pairs persisting across three sessions without declining', () => {
-  const runs = [1, 2, 3].map((session) => ({
-    id: `run-${session}`,
-    // Ascending timestamps: oldest first in the fixture, but the function
-    // must not depend on caller order.
-    completedAt: `2026-09-${10 + session}T12:00:00.000Z`,
-    totalCharacters: 100,
-    mistakes: [mistake('e', 'w'), mistake('t', 'y')]
-  }));
+  // Ascending timestamps: oldest first in the fixture, but the function
+  // must not depend on caller order.
+  const runs = makeChronologicalRuns(3, { mistakes: [makeMistake('e', 'w'), makeMistake('t', 'y')] });
   const habits = findStickyHabits(runs);
   assert.equal(habits[0].expected, 'e');
   assert.equal(habits[0].actual, 'w');
@@ -92,10 +74,10 @@ test('findStickyHabits flags pairs persisting across three sessions without decl
 
 test('findStickyHabits ignores declining pairs and single-session pairs', () => {
   const runs = [
-    { id: 'run-1', completedAt: '2026-09-11T12:00:00.000Z', totalCharacters: 100, mistakes: [mistake('e', 'w'), mistake('e', 'w'), mistake('e', 'w'), mistake('e', 'w')] },
-    { id: 'run-2', completedAt: '2026-09-12T12:00:00.000Z', totalCharacters: 100, mistakes: [mistake('e', 'w')] },
-    { id: 'run-3', completedAt: '2026-09-13T12:00:00.000Z', totalCharacters: 100, mistakes: [mistake('e', 'w')] },
-    { id: 'run-4', completedAt: '2026-09-14T12:00:00.000Z', totalCharacters: 100, mistakes: [mistake('a', 's')] }
+    makeRun({ id: 'run-1', completedAt: '2026-09-11T12:00:00.000Z', mistakes: [makeMistake('e', 'w'), makeMistake('e', 'w'), makeMistake('e', 'w'), makeMistake('e', 'w')] }),
+    makeRun({ id: 'run-2', completedAt: '2026-09-12T12:00:00.000Z', mistakes: [makeMistake('e', 'w')] }),
+    makeRun({ id: 'run-3', completedAt: '2026-09-13T12:00:00.000Z', mistakes: [makeMistake('e', 'w')] }),
+    makeRun({ id: 'run-4', completedAt: '2026-09-14T12:00:00.000Z', mistakes: [makeMistake('a', 's')] })
   ];
   const habits = findStickyHabits(runs);
   // Rates 0.04 -> 0.01 -> 0.01: newest <= oldest * 0.6 and the middle rate
@@ -106,15 +88,15 @@ test('findStickyHabits ignores declining pairs and single-session pairs', () => 
 
 test('latency bands are relative to the rolling run baseline when available', () => {
   const mistakes = [
-    mistake('e', 'w', { latencyMs: 100 }),
-    mistake('e', 'w', { latencyMs: 50 }),
-    mistake('e', 'd', { latencyMs: 500 })
+    makeMistake('e', 'w', { latencyMs: 100 }),
+    makeMistake('e', 'w', { latencyMs: 50 }),
+    makeMistake('e', 'd', { latencyMs: 500 })
   ];
-  const relative = buildErrorProfile([{ id: 'run-1', latencyBaseline: 300, mistakes }]);
+  const relative = buildErrorProfile([makeRun({ latencyBaseline: 300, mistakes })]);
   // baseline 300: motor < 150, transition <= 600
   assert.deepEqual(relative.latencyBands, { motor: 2, transition: 1 });
 
-  const fallback = buildErrorProfile([{ id: 'run-1', mistakes }]);
+  const fallback = buildErrorProfile([makeRun({ mistakes })]);
   // absolute thresholds: 50 motor, 100 transition, 500 cognitive
   assert.deepEqual(fallback.latencyBands, { motor: 1, transition: 1, cognitive: 1 });
 });
@@ -122,11 +104,12 @@ test('latency bands are relative to the rolling run baseline when available', ()
 test('overall baseline uses the 5 most recent valid run baselines', () => {
   // Runs arrive newest-first; the first 5 valid baselines are the 5 most
   // recent, so the overall baseline is median(160,150,140,130,120) = 140.
-  const runs = [160, 150, 140, 130, 120, 110, 100].map((latencyBaseline, index) => ({
-    id: `run-${index}`,
-    latencyBaseline,
-    mistakes: [mistake('e', 'w', { latencyMs: 260 })]
-  }));
+  const runs = [160, 150, 140, 130, 120, 110, 100].map((latencyBaseline, index) =>
+    makeRun({
+      id: `run-${index}`,
+      latencyBaseline,
+      mistakes: [makeMistake('e', 'w', { latencyMs: 260 })]
+    }));
   const profile = buildErrorProfile(runs);
   // 260 <= 140*2 is transition; against 120 it would be cognitive.
   assert.deepEqual(profile.latencyBands, { transition: 7 });
@@ -134,45 +117,41 @@ test('overall baseline uses the 5 most recent valid run baselines', () => {
 
 test('invalid or missing run baselines fall back to absolute thresholds', () => {
   for (const latencyBaseline of [-5, 0, 'abc', null, undefined]) {
-    const profile = buildErrorProfile([{
-      id: 'run-1',
+    const profile = buildErrorProfile([makeRun({
       latencyBaseline,
-      mistakes: [mistake('e', 'w', { latencyMs: 100 })]
-    }]);
+      mistakes: [makeMistake('e', 'w', { latencyMs: 100 })]
+    })]);
     assert.deepEqual(profile.latencyBands, { transition: 1 }, `baseline ${String(latencyBaseline)} falls back`);
   }
 });
 
 test('the overall baseline reaches the mechanical diagnosis', () => {
   const mistakes = Array.from({ length: 5 }, () =>
-    mistake('e', 'w', { latencyMs: 90 })); // adjacent, avg 90ms
-  const withBaseline = buildErrorProfile([{ id: 'run-1', latencyBaseline: 200, mistakes }]);
+    makeMistake('e', 'w', { latencyMs: 90 })); // adjacent, avg 90ms
+  const withBaseline = buildErrorProfile([makeRun({ latencyBaseline: 200, mistakes })]);
   assert.ok(
     withBaseline.diagnoses.some(({ pattern }) => pattern === 'vertical-finger-drift'),
     '90ms is fast against a 200ms baseline'
   );
-  const withoutBaseline = buildErrorProfile([{ id: 'run-1', mistakes }]);
+  const withoutBaseline = buildErrorProfile([makeRun({ mistakes })]);
   assert.ok(
     !withoutBaseline.diagnoses.some(({ pattern }) => pattern === 'vertical-finger-drift'),
     '90ms is not fast against the absolute 80ms threshold'
   );
 });
 
-const runWith = (id, day, totalCharacters, count, expected = 'e', actual = 'w') => ({
-  id,
-  completedAt: `2026-09-${String(day).padStart(2, '0')}T12:00:00.000Z`,
-  totalCharacters,
-  mistakes: Array.from({ length: count }, () => mistake(expected, actual))
-});
+const runWith = (id, day, totalCharacters, count, expected = 'e', actual = 'w') =>
+  makeRun({
+    id,
+    completedAt: `2026-09-${String(day).padStart(2, '0')}T12:00:00.000Z`,
+    totalCharacters,
+    mistakes: Array.from({ length: count }, () => makeMistake(expected, actual))
+  });
 
 test('findStickyHabits handles newest-first input identically to chronological input', () => {
   // Fixtures mimic state.history (newest-first) in one call and chronological
   // in the other; internal sorting must make the results identical.
-  const chronological = [
-    runWith('run-1', 11, 100, 1),
-    runWith('run-2', 12, 100, 1),
-    runWith('run-3', 13, 100, 1)
-  ];
+  const chronological = makeChronologicalRuns(3);
   const newestFirst = [...chronological].reverse();
   assert.deepEqual(
     findStickyHabits(newestFirst).map(({ expected, actual, sessions, totalCount }) => ({ expected, actual, sessions, totalCount })),
@@ -194,11 +173,7 @@ test('findStickyHabits ignores an improving-but-nonzero pair', () => {
 });
 
 test('findStickyHabits keeps flat and rising rates sticky', () => {
-  const flat = [
-    runWith('run-1', 11, 100, 2),
-    runWith('run-2', 12, 100, 2),
-    runWith('run-3', 13, 100, 2)
-  ];
+  const flat = makeChronologicalRuns(3, { mistakeCount: 2 });
   const flatHabits = findStickyHabits(flat);
   assert.equal(flatHabits.length, 1, 'flat rate is sticky');
   assert.deepEqual(flatHabits[0].rates, [0.02, 0.02, 0.02]);
@@ -259,7 +234,7 @@ test('findStickyHabits orders runs by completedAt, then date, then id', () => {
   const runs = [
     runWith('run-z', 13, 100, 1),
     runWith('run-a', 11, 100, 4),
-    { id: 'run-m', date: '2026-09-12', totalCharacters: 100, mistakes: [mistake('e', 'w')] }
+    { id: 'run-m', date: '2026-09-12', totalCharacters: 100, mistakes: [makeMistake('e', 'w')] }
   ];
   const habits = findStickyHabits(runs);
   assert.ok(!habits.some(({ expected }) => expected === 'e'), 'ordering by completedAt > date > id');
@@ -268,9 +243,9 @@ test('findStickyHabits orders runs by completedAt, then date, then id', () => {
   // rates 0.01 -> 0.01 -> 0.04 (sticky); raw caller order would give
   // 0.04 -> 0.01 -> 0.01 (improving, not sticky).
   const idOnly = [
-    { id: 'c', totalCharacters: 100, mistakes: Array.from({ length: 4 }, () => mistake('e', 'w')) },
-    { id: 'a', totalCharacters: 100, mistakes: [mistake('e', 'w')] },
-    { id: 'b', totalCharacters: 100, mistakes: [mistake('e', 'w')] }
+    { id: 'c', totalCharacters: 100, mistakes: Array.from({ length: 4 }, () => makeMistake('e', 'w')) },
+    { id: 'a', totalCharacters: 100, mistakes: [makeMistake('e', 'w')] },
+    { id: 'b', totalCharacters: 100, mistakes: [makeMistake('e', 'w')] }
   ];
   const idHabits = findStickyHabits(idOnly);
   assert.equal(idHabits.length, 1, 'id string order is used when no timestamps exist');
@@ -297,16 +272,14 @@ test('isImproving applies the 60% drop and middle-rate guard', () => {
 });
 
 test('buildErrorProfile exposes labelOverlap for multi-label mistakes', () => {
-  const runs = [{
-    id: 'run-1',
+  const runs = [makeRun({
     totalCharacters: 30,
-    completedAt: '2026-09-19T12:00:00.000Z',
     mistakes: [
-      mistake('e', 'w'), // adjacent: 1 label
-      mistake('e', 'd'), // adjacent + same-finger: 2 labels
-      mistake('e', 'i')  // homologous: 1 label
+      makeMistake('e', 'w'), // adjacent: 1 label
+      makeMistake('e', 'd'), // adjacent + same-finger: 2 labels
+      makeMistake('e', 'i')  // homologous: 1 label
     ]
-  }];
+  })];
   const profile = buildErrorProfile(runs);
   assert.equal(profile.totalMistakes, 3);
   // total labels = 4, so overlap = 4/3.
@@ -322,12 +295,10 @@ test('buildErrorProfile exposes labelOverlap for multi-label mistakes', () => {
 });
 
 test('category rates are not mutually exclusive and can sum above 1', () => {
-  const runs = [{
-    id: 'run-1',
+  const runs = [makeRun({
     totalCharacters: 20,
-    completedAt: '2026-09-19T12:00:00.000Z',
-    mistakes: [mistake('e', 'd'), mistake('e', 'd')] // each carries 2 labels
-  }];
+    mistakes: [makeMistake('e', 'd'), makeMistake('e', 'd')] // each carries 2 labels
+  })];
   const profile = buildErrorProfile(runs);
   const { adjacentRate, sameFingerRate, homologousRate } = profile.classificationSummary;
   assert.ok(adjacentRate + sameFingerRate + homologousRate > 1.0,
@@ -342,9 +313,7 @@ test('buildErrorProfile exposes zero labelOverlap with no mistakes', () => {
 });
 
 test('buildErrorProfile handles a single empty session', () => {
-  const profile = buildErrorProfile([{
-    id: 'run-1', mistakes: [], totalCharacters: 100, completedAt: '2026-09-19T12:00:00.000Z'
-  }]);
+  const profile = buildErrorProfile([makeRun({ mistakes: [] })]);
   assert.equal(profile.runsAnalyzed, 1);
   assert.equal(profile.totalMistakes, 0);
   assert.equal(profile.correctionRate, 0);
@@ -388,15 +357,15 @@ test('findStickyHabits is not sticky without per-session denominators', () => {
 test('error profile is stable across save/load', () => {
   const storage = new MemoryStorage();
   const runs = [
-    { id: 'run-3', wpm: 62, accuracy: 94, difficulty: 'medium', totalCharacters: 100,
+    makeRun({ id: 'run-3', wpm: 62, accuracy: 94, difficulty: 'medium',
       completedAt: '2026-09-19T12:00:00.000Z',
-      mistakes: [{ expected: 'e', actual: 'w', word: 'the', characterIndex: 2, timestamp: 1_000, latencyMs: 55, prevChar: 'h', nextChar: ' ', positionInWord: 'end', wasCorrected: false }] },
-    { id: 'run-2', wpm: 61, accuracy: 93, difficulty: 'medium', totalCharacters: 100,
+      mistakes: [makeMistake({ latencyMs: 55, positionInWord: 'end' })] }),
+    makeRun({ id: 'run-2', wpm: 61, accuracy: 93, difficulty: 'medium',
       completedAt: '2026-09-18T12:00:00.000Z',
-      mistakes: [{ expected: 'e', actual: 'w', word: 'the', characterIndex: 2, timestamp: 1_000, latencyMs: 50, prevChar: 'h', nextChar: ' ', positionInWord: 'end', wasCorrected: false }] },
-    { id: 'run-1', wpm: 60, accuracy: 92, difficulty: 'medium', totalCharacters: 100,
+      mistakes: [makeMistake({ latencyMs: 50, positionInWord: 'end' })] }),
+    makeRun({ id: 'run-1', wpm: 60, accuracy: 92, difficulty: 'medium',
       completedAt: '2026-09-17T12:00:00.000Z',
-      mistakes: [{ expected: 'e', actual: 'w', word: 'the', characterIndex: 2, timestamp: 1_000, latencyMs: 45, prevChar: 'h', nextChar: ' ', positionInWord: 'end', wasCorrected: false }] }
+      mistakes: [makeMistake({ latencyMs: 45, positionInWord: 'end' })] })
   ];
   storage.setItem(STORAGE_KEY, JSON.stringify({ settings: DEFAULT_SETTINGS, history: runs }));
 
