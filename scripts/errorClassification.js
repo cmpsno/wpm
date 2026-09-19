@@ -20,12 +20,32 @@ const FINGER_KEY_MAP = Object.freeze({
   rightMiddle: ['i', 'k'],
   rightRing: ['o', 'l'],
   rightPinky: ['p', ';', '/'],
+  // Space is pressed by either thumb in real touch typing; treating it as a
+  // single 'thumb' finger here is an intentional simplification, since which
+  // thumb pressed space is not observable from a keystroke event.
   thumb: [' ']
 });
 
 const KEY_TO_FINGER = new Map();
 for (const [finger, keys] of Object.entries(FINGER_KEY_MAP)) {
   for (const key of keys) KEY_TO_FINGER.set(key, finger);
+}
+
+// Development-time sanity check: each key belongs to exactly one finger.
+// A duplicate key in a later FINGER_KEY_MAP entry would silently overwrite
+// the earlier KEY_TO_FINGER assignment, so fail loudly at import time.
+assertFingerMapIsDisjoint(FINGER_KEY_MAP);
+
+export function assertFingerMapIsDisjoint(map) {
+  const seen = new Map();
+  for (const [finger, keys] of Object.entries(map)) {
+    for (const key of keys) {
+      if (seen.has(key)) {
+        throw new Error(`FINGER_KEY_MAP conflict for key "${key}": ${seen.get(key)} vs ${finger}`);
+      }
+      seen.set(key, finger);
+    }
+  }
 }
 
 // Physical layout used for adjacency. Rows are the unshifted QWERTY rows;
