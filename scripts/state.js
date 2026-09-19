@@ -49,6 +49,29 @@ export function validateSettings(candidate = {}) {
   };
 }
 
+function sanitizeMistake(mistake) {
+  if (!mistake || typeof mistake !== 'object') return null;
+  if (typeof mistake.expected !== 'string' || typeof mistake.actual !== 'string') return null;
+  if (typeof mistake.word !== 'string' || !Number.isInteger(mistake.characterIndex)) return null;
+  const latencyMs = Number.isFinite(mistake.latencyMs) && mistake.latencyMs >= 0
+    ? Math.round(mistake.latencyMs)
+    : null;
+  return {
+    expected: mistake.expected,
+    actual: mistake.actual,
+    word: mistake.word,
+    characterIndex: mistake.characterIndex,
+    timestamp: Number.isFinite(mistake.timestamp) ? mistake.timestamp : null,
+    latencyMs,
+    prevChar: typeof mistake.prevChar === 'string' ? mistake.prevChar : null,
+    nextChar: typeof mistake.nextChar === 'string' ? mistake.nextChar : null,
+    positionInWord: ['start', 'middle', 'end'].includes(mistake.positionInWord)
+      ? mistake.positionInWord
+      : null,
+    wasCorrected: mistake.wasCorrected === true
+  };
+}
+
 function sanitizeHistory(candidate) {
   if (!Array.isArray(candidate)) return [];
   return candidate
@@ -74,13 +97,13 @@ function sanitizeHistory(candidate) {
       completedAt: new Date(entry.completedAt ?? entry.date).toISOString(),
       id: typeof entry.id === 'string' ? entry.id : `run-${new Date(entry.completedAt ?? entry.date).getTime()}`,
       isTargetedRetry: entry.isTargetedRetry === true,
+      passageId: typeof entry.passageId === 'string' ? entry.passageId : null,
+      passageTitle: typeof entry.passageTitle === 'string' ? entry.passageTitle : null,
+      totalCharacters: Number.isInteger(entry.totalCharacters) && entry.totalCharacters >= 0
+        ? entry.totalCharacters
+        : null,
       mistakes: Array.isArray(entry.mistakes)
-        ? entry.mistakes.filter((mistake) => mistake
-          && typeof mistake.expected === 'string'
-          && typeof mistake.actual === 'string'
-          && typeof mistake.word === 'string'
-          && Number.isInteger(mistake.characterIndex))
-          .map(({ expected, actual, word, characterIndex }) => ({ expected, actual, word, characterIndex }))
+        ? entry.mistakes.map(sanitizeMistake).filter((mistake) => mistake !== null)
         : []
     }));
 }

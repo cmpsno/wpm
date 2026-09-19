@@ -135,6 +135,9 @@ function finishTest() {
     category: state.settings.mode === 'code' ? state.settings.category : 'all',
     completedAt,
     isTargetedRetry: currentRunIsTargetedRetry,
+    passageId: state.passage?.id ?? null,
+    passageTitle: state.passage?.title ?? null,
+    totalCharacters: state.totalKeystrokes,
     mistakes: state.mistakes
   });
 
