@@ -8,6 +8,8 @@ import {
   keyboardDistance,
   latencyBand,
   severityScore,
+  DIAGNOSIS_PRECEDENCE,
+  MAX_DIAGNOSES,
   summarizeFingerDrift
 } from '../scripts/errorClassification.js';
 
@@ -104,17 +106,81 @@ test('summarizeFingerDrift measures index encroachment from mistakes', () => {
 
 test('diagnoseMechanically fires each rule only past its threshold', () => {
   const overreach = diagnoseMechanically({ sameFingerRate: 0.4, indexEncroachmentRate: 0.3 });
-  assert.deepEqual(overreach.map(({ pattern }) => pattern), ['index-finger-overreach']);
+  assert.equal(overreach[0].pattern, 'index-finger-overreach');
+  assert.equal(overreach[0].primary, true);
+  assert.equal(overreach[0].secondary, false);
 
   const drift = diagnoseMechanically({ adjacentRate: 0.5, avgLatencyMs: 60 });
-  assert.deepEqual(drift.map(({ pattern }) => pattern), ['vertical-finger-drift']);
+  assert.equal(drift[0].pattern, 'vertical-finger-drift');
+  assert.equal(drift[0].primary, true);
 
   const mapping = diagnoseMechanically({ homologousRate: 0.2 });
-  assert.deepEqual(mapping.map(({ pattern }) => pattern), ['hand-mapping-confusion']);
+  assert.equal(mapping[0].pattern, 'hand-mapping-confusion');
+  assert.equal(mapping[0].primary, true);
 
   const load = diagnoseMechanically({ cognitiveRate: 0.25 });
-  assert.deepEqual(load.map(({ pattern }) => pattern), ['high-cognitive-load']);
+  assert.equal(load[0].pattern, 'high-cognitive-load');
+  assert.equal(load[0].primary, true);
 
   assert.deepEqual(diagnoseMechanically({ sameFingerRate: 0.4, indexEncroachmentRate: 0.1 }), []);
   assert.deepEqual(diagnoseMechanically({}), []);
+});
+
+test('diagnoseMechanically marks one primary by precedence', () => {
+  const result = diagnoseMechanically({
+    sameFingerRate: 0.5,
+    indexEncroachmentRate: 0.3,
+    adjacentRate: 0.5,
+    avgLatencyMs: 40,
+    homologousRate: 0.2,
+    cognitiveRate: 0.3,
+  });
+  assert.ok(result.length <= MAX_DIAGNOSES);
+  assert.equal(result[0].pattern, 'hand-mapping-confusion');
+  assert.equal(result[0].primary, true);
+  assert.equal(result[0].secondary, false);
+  assert.equal(result.filter((d) => d.primary).length, 1, 'exactly one primary');
+  if (result[1]) {
+    assert.equal(result[1].secondary, true);
+    assert.equal(result[1].primary, false);
+  }
+});
+
+test('diagnoseMechanically only fires vertical-finger-drift when nothing more specific applies', () => {
+  const result = diagnoseMechanically({ adjacentRate: 0.5, avgLatencyMs: 60 });
+  assert.deepEqual(result.map((d) => d.pattern), ['vertical-finger-drift']);
+  assert.equal(result[0].primary, true);
+  assert.equal(result[0].secondary, false);
+});
+
+test('diagnoseMechanically respects the two-diagnosis cap', () => {
+  const result = diagnoseMechanically({
+    homologousRate: 0.2,
+    sameFingerRate: 0.5,
+    indexEncroachmentRate: 0.3,
+    adjacentRate: 0.5,
+    avgLatencyMs: 40,
+    cognitiveRate: 0.3,
+  });
+  assert.equal(result.length, 2);
+  // Precedence: hand-mapping-confusion (1st), index-finger-overreach (2nd).
+  assert.equal(result[0].pattern, 'hand-mapping-confusion');
+  assert.equal(result[1].pattern, 'index-finger-overreach');
+  assert.equal(result[0].primary, true);
+  assert.equal(result[1].secondary, true);
+});
+
+test('diagnoseMechanically returns no primary when no rule fires', () => {
+  assert.deepEqual(diagnoseMechanically({}), []);
+  assert.deepEqual(diagnoseMechanically({ sameFingerRate: 0.4, indexEncroachmentRate: 0.1 }), []);
+});
+
+test('DIAGNOSIS_PRECEDENCE covers exactly the four known patterns', () => {
+  assert.deepEqual([...DIAGNOSIS_PRECEDENCE], [
+    'hand-mapping-confusion',
+    'index-finger-overreach',
+    'high-cognitive-load',
+    'vertical-finger-drift'
+  ]);
+  assert.equal(MAX_DIAGNOSES, 2);
 });

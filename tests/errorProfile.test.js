@@ -53,6 +53,14 @@ test('buildErrorProfile aggregates distributions, rates, and diagnoses', () => {
   assert.equal(profile.fingerErrorDistribution.leftMiddle, 3);
   assert.ok(profile.classificationSummary.adjacentRate > 0.5);
   assert.ok(Array.isArray(profile.diagnoses));
+  assert.ok(profile.diagnoses.length <= 2, 'diagnoses are capped at two');
+  if (profile.diagnoses.length > 0) {
+    assert.equal(
+      profile.diagnoses.filter((d) => d.primary).length,
+      1,
+      'exactly one primary diagnosis'
+    );
+  }
 });
 
 test('buildErrorProfile on empty input returns zeroed rates and no diagnoses', () => {
@@ -284,4 +292,49 @@ test('isImproving applies the 60% drop and middle-rate guard', () => {
   assert.ok(!isImproving([0.08, 0.05]), 'fewer than 3 rates');
   assert.ok(!isImproving([0.08, NaN, 0.02]), 'non-finite rate');
   assert.ok(isImproving([0, 0.05, 0.02]), 'cannot improve from zero');
+});
+
+test('buildErrorProfile exposes labelOverlap for multi-label mistakes', () => {
+  const runs = [{
+    id: 'run-1',
+    totalCharacters: 30,
+    completedAt: '2026-09-19T12:00:00.000Z',
+    mistakes: [
+      mistake('e', 'w'), // adjacent: 1 label
+      mistake('e', 'd'), // adjacent + same-finger: 2 labels
+      mistake('e', 'i')  // homologous: 1 label
+    ]
+  }];
+  const profile = buildErrorProfile(runs);
+  assert.equal(profile.totalMistakes, 3);
+  // total labels = 4, so overlap = 4/3.
+  assert.ok(Math.abs(profile.labelOverlap - 4 / 3) < 1e-9);
+  assert.equal(profile.classificationSummary.labelOverlap, profile.labelOverlap);
+  assert.ok(profile.classificationSummary.adjacentRate > 0.5);
+  assert.deepEqual(profile.classificationSummary.counts, {
+    adjacent: 2,
+    'same-finger': 1,
+    homologous: 1,
+    other: 0
+  });
+});
+
+test('category rates are not mutually exclusive and can sum above 1', () => {
+  const runs = [{
+    id: 'run-1',
+    totalCharacters: 20,
+    completedAt: '2026-09-19T12:00:00.000Z',
+    mistakes: [mistake('e', 'd'), mistake('e', 'd')] // each carries 2 labels
+  }];
+  const profile = buildErrorProfile(runs);
+  const { adjacentRate, sameFingerRate, homologousRate } = profile.classificationSummary;
+  assert.ok(adjacentRate + sameFingerRate + homologousRate > 1.0,
+    `expected overlapping rates, got sum=${adjacentRate + sameFingerRate + homologousRate}`);
+  assert.equal(profile.labelOverlap, 2.0);
+});
+
+test('buildErrorProfile exposes zero labelOverlap with no mistakes', () => {
+  const profile = buildErrorProfile([]);
+  assert.equal(profile.labelOverlap, 0);
+  assert.deepEqual(profile.diagnoses, []);
 });
