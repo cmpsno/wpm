@@ -85,3 +85,57 @@ test('findStickyHabits ignores declining pairs and single-session pairs', () => 
   assert.ok(!habits.some(({ expected }) => expected === 'e'), 'declining pair is not sticky');
   assert.ok(!habits.some(({ expected }) => expected === 'a'), 'single-session pair is not sticky');
 });
+
+test('latency bands are relative to the rolling run baseline when available', () => {
+  const mistakes = [
+    mistake('e', 'w', { latencyMs: 100 }),
+    mistake('e', 'w', { latencyMs: 50 }),
+    mistake('e', 'd', { latencyMs: 500 })
+  ];
+  const relative = buildErrorProfile([{ id: 'run-1', latencyBaseline: 300, mistakes }]);
+  // baseline 300: motor < 150, transition <= 600
+  assert.deepEqual(relative.latencyBands, { motor: 2, transition: 1 });
+
+  const fallback = buildErrorProfile([{ id: 'run-1', mistakes }]);
+  // absolute thresholds: 50 motor, 100 transition, 500 cognitive
+  assert.deepEqual(fallback.latencyBands, { motor: 1, transition: 1, cognitive: 1 });
+});
+
+test('overall baseline uses the 5 most recent valid run baselines', () => {
+  // Runs arrive newest-first; the first 5 valid baselines are the 5 most
+  // recent, so the overall baseline is median(160,150,140,130,120) = 140.
+  const runs = [160, 150, 140, 130, 120, 110, 100].map((latencyBaseline, index) => ({
+    id: `run-${index}`,
+    latencyBaseline,
+    mistakes: [mistake('e', 'w', { latencyMs: 260 })]
+  }));
+  const profile = buildErrorProfile(runs);
+  // 260 <= 140*2 is transition; against 120 it would be cognitive.
+  assert.deepEqual(profile.latencyBands, { transition: 7 });
+});
+
+test('invalid or missing run baselines fall back to absolute thresholds', () => {
+  for (const latencyBaseline of [-5, 0, 'abc', null, undefined]) {
+    const profile = buildErrorProfile([{
+      id: 'run-1',
+      latencyBaseline,
+      mistakes: [mistake('e', 'w', { latencyMs: 100 })]
+    }]);
+    assert.deepEqual(profile.latencyBands, { transition: 1 }, `baseline ${String(latencyBaseline)} falls back`);
+  }
+});
+
+test('the overall baseline reaches the mechanical diagnosis', () => {
+  const mistakes = Array.from({ length: 5 }, () =>
+    mistake('e', 'w', { latencyMs: 90 })); // adjacent, avg 90ms
+  const withBaseline = buildErrorProfile([{ id: 'run-1', latencyBaseline: 200, mistakes }]);
+  assert.ok(
+    withBaseline.diagnoses.some(({ pattern }) => pattern === 'vertical-finger-drift'),
+    '90ms is fast against a 200ms baseline'
+  );
+  const withoutBaseline = buildErrorProfile([{ id: 'run-1', mistakes }]);
+  assert.ok(
+    !withoutBaseline.diagnoses.some(({ pattern }) => pattern === 'vertical-finger-drift'),
+    '90ms is not fast against the absolute 80ms threshold'
+  );
+});

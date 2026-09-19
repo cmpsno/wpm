@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { backspace, createPassageRunState, getContainingWord, typeCharacter, wordPositionInText } from '../scripts/passageRun.js';
+import { backspace, createPassageRunState, getContainingWord, getLatencyBaseline, median, typeCharacter, wordPositionInText } from '../scripts/passageRun.js';
 import { calcAccuracy, calcWPM } from '../scripts/stats.js';
 
 const passage = Object.freeze({ text: 'A, b.' });
@@ -129,4 +129,39 @@ test('completed accuracy retains corrected mistakes and WPM uses correct keys', 
   assert.equal(calcAccuracy(run.correctKeystrokes, run.totalKeystrokes), 67);
   assert.equal(calcWPM(run.correctKeystrokes, run.startedAt, run.finishedAt), 0);
   assert.equal(calcWPM(run.totalKeystrokes, run.startedAt, run.finishedAt), 1);
+});
+
+test('median averages the middle pair and leaves the input untouched', () => {
+  assert.equal(median([5, 1, 3]), 3);
+  assert.equal(median([4, 1, 2, 3]), 2.5);
+  assert.equal(median([]), null);
+  assert.equal(median(null), null);
+  const input = [3, 1, 2];
+  median(input);
+  assert.deepEqual(input, [3, 1, 2]);
+});
+
+test('correctKeystrokeLatencies collects only correct, measurable keystrokes', () => {
+  const run = createPassageRunState({ text: 'abcdef' });
+  typeCharacter(run, 'a', 1_000); // first keystroke: no latency to record
+  typeCharacter(run, 'b', 1_120);
+  typeCharacter(run, 'x', 1_200); // incorrect: locked, must not be recorded
+  backspace(run);
+  typeCharacter(run, 'c', 1_300); // latency spans the error recovery (100ms)
+  assert.deepEqual(run.correctKeystrokeLatencies, [120, 100]);
+});
+
+test('getLatencyBaseline needs 10 samples before returning the median', () => {
+  const run = createPassageRunState({ text: 'abcdefghijk' });
+  assert.equal(getLatencyBaseline(run), null);
+  let now = 1_000;
+  for (const character of 'abcdefghijk') {
+    now += 120;
+    typeCharacter(run, character, now);
+  }
+  // First keystroke had no latency, so 10 samples of 120ms were collected.
+  assert.equal(run.correctKeystrokeLatencies.length, 10);
+  assert.equal(getLatencyBaseline(run), 120);
+  assert.equal(getLatencyBaseline({ correctKeystrokeLatencies: [1, 2, 3] }), null);
+  assert.equal(getLatencyBaseline(null), null);
 });

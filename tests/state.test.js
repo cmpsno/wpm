@@ -144,3 +144,52 @@ test('legacy mistakes without latency fields load with null defaults', () => {
   assert.equal(mistake.positionInWord, null);
   assert.equal(mistake.wasCorrected, false);
 });
+
+test('latencyBaseline survives the history round-trip when valid', () => {
+  pushHistory({
+    wpm: 72,
+    accuracy: 96,
+    difficulty: 'medium',
+    completedAt: '2026-09-19T12:00:00.000Z',
+    latencyBaseline: 150,
+    mistakes: []
+  });
+  assert.equal(state.history[0].latencyBaseline, 150);
+});
+
+test('invalid latencyBaseline values are sanitized to null', () => {
+  for (const latencyBaseline of [-10, 0, 'abc', NaN]) {
+    pushHistory({
+      wpm: 72,
+      accuracy: 96,
+      difficulty: 'medium',
+      completedAt: '2026-09-19T12:00:00.000Z',
+      latencyBaseline,
+      mistakes: []
+    });
+    assert.equal(state.history[0].latencyBaseline, null, `baseline ${String(latencyBaseline)} becomes null`);
+  }
+});
+
+test('fractional latencyBaseline is rounded to whole milliseconds', () => {
+  pushHistory({
+    wpm: 72,
+    accuracy: 96,
+    difficulty: 'medium',
+    completedAt: '2026-09-19T12:00:00.000Z',
+    latencyBaseline: 150.6,
+    mistakes: []
+  });
+  assert.equal(state.history[0].latencyBaseline, 151);
+});
+
+test('legacy history without latencyBaseline loads as null', () => {
+  pushHistory({
+    wpm: 72,
+    accuracy: 96,
+    difficulty: 'medium',
+    completedAt: '2026-09-19T12:00:00.000Z',
+    mistakes: []
+  });
+  assert.equal(state.history[0].latencyBaseline, null);
+});

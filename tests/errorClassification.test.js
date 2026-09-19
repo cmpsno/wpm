@@ -55,6 +55,32 @@ test('latency bands split motor, transition, and cognitive errors', () => {
   assert.equal(latencyBand(-5), 'unknown');
 });
 
+test('latencyBand is relative to a per-user baseline when provided', () => {
+  assert.equal(latencyBand(79, 200), 'motor');      // 79 < 200*0.5
+  assert.equal(latencyBand(100, 200), 'transition'); // exactly at the motor cutoff
+  assert.equal(latencyBand(150, 200), 'transition'); // 150 <= 200*2
+  assert.equal(latencyBand(400, 200), 'transition'); // exactly at the transition cutoff
+  assert.equal(latencyBand(500, 200), 'cognitive');  // 500 > 200*2
+  // Invalid baselines fall back to the absolute 80/400 thresholds.
+  assert.equal(latencyBand(79, null), 'motor');
+  assert.equal(latencyBand(79, 0), 'motor');
+  assert.equal(latencyBand(79, -5), 'motor');
+  assert.equal(latencyBand(90, 100), 'transition');  // 90 >= 100*0.5 under a fast baseline
+  assert.equal(latencyBand(null, 200), 'unknown');
+});
+
+test('severityScore and diagnoseMechanically accept a baseline', () => {
+  const relative = severityScore({ adjacencyDistance: 5, latencyMs: 300, wasCorrected: true, baseline: 100 });
+  const absolute = severityScore({ adjacencyDistance: 5, latencyMs: 300, wasCorrected: true });
+  // 300ms is cognitive against a 100ms baseline but transition against 80/400.
+  assert.ok(relative < absolute, 'baseline-relative band changes the score');
+
+  const driftRelative = diagnoseMechanically({ adjacentRate: 0.5, avgLatencyMs: 90, baseline: 200 });
+  assert.deepEqual(driftRelative.map(({ pattern }) => pattern), ['vertical-finger-drift']);
+  const driftAbsolute = diagnoseMechanically({ adjacentRate: 0.5, avgLatencyMs: 90, baseline: null });
+  assert.deepEqual(driftAbsolute, [], '90ms is not fast against the absolute 80ms threshold');
+});
+
 test('severity scores motor blind spots highest and corrected errors lowest', () => {
   const blindSpot = severityScore({ adjacencyDistance: 1, latencyMs: 40, wasCorrected: false });
   const corrected = severityScore({ adjacencyDistance: 1, latencyMs: 40, wasCorrected: true });
