@@ -65,6 +65,20 @@ function baselineCutoffs(baseline) {
   };
 }
 
+// Diagnosis precedence, most specific first. When several mechanical
+// diagnoses fire for one session they share a root cause more often than
+// not, so the list is ordered by specificity and at most MAX_DIAGNOSES are
+// returned: one primary, the rest secondary. The most specific claim is
+// also the most actionable, and it usually explains the generic one.
+const DIAGNOSIS_PRECEDENCE = Object.freeze([
+  'hand-mapping-confusion',
+  'index-finger-overreach',
+  'high-cognitive-load',
+  'vertical-finger-drift'
+]);
+
+const MAX_DIAGNOSES = 2;
+
 function normalizeKey(key) {
   return typeof key === 'string' && [...key].length === 1 ? key.toLowerCase() : null;
 }
@@ -181,38 +195,56 @@ export function diagnoseMechanically(summary = {}) {
     // 80ms motor threshold.
     baseline = null
   } = summary;
-  const diagnoses = [];
+  // Unknown patterns sort LAST, never first: DIAGNOSIS_PRECEDENCE.indexOf
+  // returns -1 for a missing pattern, which would otherwise sort it to the
+  // front of the list.
+  const precedenceOf = (pattern) => {
+    const index = DIAGNOSIS_PRECEDENCE.indexOf(pattern);
+    return index === -1 ? DIAGNOSIS_PRECEDENCE.length : index;
+  };
+
+  const candidates = [];
   const motorThreshold = baselineCutoffs(baseline).motor;
 
   if (sameFingerRate > 0.3 && indexEncroachmentRate > 0.2) {
-    diagnoses.push({
+    candidates.push({
       pattern: 'index-finger-overreach',
       detail: 'Errors repeatedly land on index-finger keys while aiming at neighboring columns.',
       recommendation: 'Drill home-row reaches with the middle and ring fingers held down, e.g. slow "dededed fdfdfd" rows before speeding up.'
     });
   }
   if (adjacentRate > 0.4 && avgLatencyMs !== null && avgLatencyMs < motorThreshold) {
-    diagnoses.push({
+    candidates.push({
       pattern: 'vertical-finger-drift',
       detail: 'Fast adjacent-key substitutions suggest fingers drifting up/down a column instead of curling to the home row.',
       recommendation: 'Practice column drills (qaz, wsx, edc, rfv) at low speed, lifting each finger straight up rather than sliding.'
     });
   }
   if (homologousRate > 0.15) {
-    diagnoses.push({
+    candidates.push({
       pattern: 'hand-mapping-confusion',
       detail: 'Mirror-position substitutions across hands point to a weak left/right hand map.',
       recommendation: 'Alternate-hand word drills (words typed one hand at a time) to separate the two hand maps.'
     });
   }
   if (cognitiveRate > 0.2) {
-    diagnoses.push({
+    candidates.push({
       pattern: 'high-cognitive-load',
       detail: 'A large share of errors follow long pauses, which reads as uncertainty rather than a motor habit.',
       recommendation: 'Slow down and prioritize accuracy over speed; preview unfamiliar words or code tokens before typing them.'
     });
   }
-  return diagnoses;
+
+  // Sort by precedence (not insertion order), cap the count, and tag one
+  // primary. Consumers reading diagnoses[0] get the primary diagnosis.
+  return candidates
+    .sort((a, b) => precedenceOf(a.pattern) - precedenceOf(b.pattern))
+    .slice(0, MAX_DIAGNOSES)
+    .map((diagnosis, index) => ({
+      ...diagnosis,
+      primary: index === 0,
+      secondary: index > 0
+    }));
 }
 
-export { FINGER_KEY_MAP, KEYBOARD_ROWS, LATENCY };
+export { FINGER_KEY_MAP, KEYBOARD_ROWS, LATENCY, DIAGNOSIS_PRECEDENCE, MAX_DIAGNOSES };

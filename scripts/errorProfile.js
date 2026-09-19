@@ -172,6 +172,13 @@ export function findStickyHabits(runs = []) {
   return habits.sort((a, b) => b.sessions - a.sessions || b.totalCount - a.totalCount);
 }
 
+// Rate semantics: sameFingerRate / adjacentRate / homologousRate are each
+// "share of mistakes carrying this label". They are NOT mutually exclusive —
+// a single mistake such as e->d carries both 'adjacent' and 'same-finger'.
+// labelOverlap is the average number of labels per mistake (1.0 = disjoint,
+// 2.0 = every mistake carries two labels). Do not treat the rates as
+// summing to 1, and do not renormalize them to sum to 1 — thresholds in
+// diagnoseMechanically depend on per-label shares.
 export function buildErrorProfile(runs = []) {
   const mistakes = mistakesIn(runs);
   const substitutionMatrix = buildSubstitutionMatrix(mistakes);
@@ -183,6 +190,8 @@ export function buildErrorProfile(runs = []) {
     for (const type of types) typeCounts[type] = (typeCounts[type] ?? 0) + 1;
   }
   const total = mistakes.length;
+  const totalLabels = Object.values(typeCounts).reduce((sum, count) => sum + count, 0);
+  const labelOverlap = total === 0 ? 0 : totalLabels / total;
   const rate = (count) => (total === 0 ? 0 : count / total);
 
   // Classify every mistake's latency against the user's own recent speed
@@ -212,16 +221,19 @@ export function buildErrorProfile(runs = []) {
     latencyBands,
     correctionRate: rate(corrected),
     classificationSummary: {
+      counts: { ...typeCounts },
       adjacent: typeCounts.adjacent,
       sameFinger: typeCounts['same-finger'],
       homologous: typeCounts.homologous,
       other: typeCounts.other,
       adjacentRate: summary.adjacentRate,
       sameFingerRate: summary.sameFingerRate,
-      homologousRate: summary.homologousRate
+      homologousRate: summary.homologousRate,
+      labelOverlap
     },
     fingerDrift: drift,
     stickyHabits: findStickyHabits(runs),
-    diagnoses: diagnoseMechanically(summary)
+    diagnoses: diagnoseMechanically(summary),
+    labelOverlap
   };
 }
