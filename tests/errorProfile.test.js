@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildErrorProfile, buildSubstitutionMatrix, findStickyHabits } from '../scripts/errorProfile.js';
+import { buildErrorProfile, buildSubstitutionMatrix, findStickyHabits, isImproving, sessionRate } from '../scripts/errorProfile.js';
 
 const mistake = (expected, actual, overrides = {}) => ({
   expected,
@@ -66,23 +66,31 @@ test('buildErrorProfile on empty input returns zeroed rates and no diagnoses', (
 test('findStickyHabits flags pairs persisting across three sessions without declining', () => {
   const runs = [1, 2, 3].map((session) => ({
     id: `run-${session}`,
+    // Ascending timestamps: oldest first in the fixture, but the function
+    // must not depend on caller order.
+    completedAt: `2026-09-${10 + session}T12:00:00.000Z`,
+    totalCharacters: 100,
     mistakes: [mistake('e', 'w'), mistake('t', 'y')]
   }));
   const habits = findStickyHabits(runs);
   assert.equal(habits[0].expected, 'e');
   assert.equal(habits[0].actual, 'w');
   assert.equal(habits[0].sessions, 3);
+  // Flat rate 0.01 across sessions is not improving, so both pairs are sticky.
+  assert.equal(habits.length, 2);
 });
 
 test('findStickyHabits ignores declining pairs and single-session pairs', () => {
   const runs = [
-    { id: 'run-1', mistakes: [mistake('e', 'w'), mistake('e', 'w'), mistake('e', 'w'), mistake('e', 'w')] },
-    { id: 'run-2', mistakes: [mistake('e', 'w')] },
-    { id: 'run-3', mistakes: [mistake('e', 'w')] },
-    { id: 'run-4', mistakes: [mistake('a', 's')] }
+    { id: 'run-1', completedAt: '2026-09-11T12:00:00.000Z', totalCharacters: 100, mistakes: [mistake('e', 'w'), mistake('e', 'w'), mistake('e', 'w'), mistake('e', 'w')] },
+    { id: 'run-2', completedAt: '2026-09-12T12:00:00.000Z', totalCharacters: 100, mistakes: [mistake('e', 'w')] },
+    { id: 'run-3', completedAt: '2026-09-13T12:00:00.000Z', totalCharacters: 100, mistakes: [mistake('e', 'w')] },
+    { id: 'run-4', completedAt: '2026-09-14T12:00:00.000Z', totalCharacters: 100, mistakes: [mistake('a', 's')] }
   ];
   const habits = findStickyHabits(runs);
-  assert.ok(!habits.some(({ expected }) => expected === 'e'), 'declining pair is not sticky');
+  // Rates 0.04 -> 0.01 -> 0.01: newest <= oldest * 0.6 and the middle rate
+  // is below the oldest, so the pair is improving and not sticky.
+  assert.ok(!habits.some(({ expected }) => expected === 'e'), 'improving pair is not sticky');
   assert.ok(!habits.some(({ expected }) => expected === 'a'), 'single-session pair is not sticky');
 });
 
@@ -138,4 +146,142 @@ test('the overall baseline reaches the mechanical diagnosis', () => {
     !withoutBaseline.diagnoses.some(({ pattern }) => pattern === 'vertical-finger-drift'),
     '90ms is not fast against the absolute 80ms threshold'
   );
+});
+
+const runWith = (id, day, totalCharacters, count, expected = 'e', actual = 'w') => ({
+  id,
+  completedAt: `2026-09-${String(day).padStart(2, '0')}T12:00:00.000Z`,
+  totalCharacters,
+  mistakes: Array.from({ length: count }, () => mistake(expected, actual))
+});
+
+test('findStickyHabits handles newest-first input identically to chronological input', () => {
+  // Fixtures mimic state.history (newest-first) in one call and chronological
+  // in the other; internal sorting must make the results identical.
+  const chronological = [
+    runWith('run-1', 11, 100, 1),
+    runWith('run-2', 12, 100, 1),
+    runWith('run-3', 13, 100, 1)
+  ];
+  const newestFirst = [...chronological].reverse();
+  assert.deepEqual(
+    findStickyHabits(newestFirst).map(({ expected, actual, sessions, totalCount }) => ({ expected, actual, sessions, totalCount })),
+    findStickyHabits(chronological).map(({ expected, actual, sessions, totalCount }) => ({ expected, actual, sessions, totalCount })),
+    'caller order does not affect results'
+  );
+});
+
+test('findStickyHabits ignores an improving-but-nonzero pair', () => {
+  // Rates 0.08 -> 0.05 -> 0.02: newest <= oldest * 0.6 and a middle rate is
+  // strictly below the oldest, so the pair is improving despite nonzero.
+  const runs = [
+    runWith('run-1', 11, 50, 4),
+    runWith('run-2', 12, 60, 3),
+    runWith('run-3', 13, 100, 2)
+  ];
+  const habits = findStickyHabits(runs);
+  assert.ok(!habits.some(({ expected }) => expected === 'e'), 'improving pair is not sticky');
+});
+
+test('findStickyHabits keeps flat and rising rates sticky', () => {
+  const flat = [
+    runWith('run-1', 11, 100, 2),
+    runWith('run-2', 12, 100, 2),
+    runWith('run-3', 13, 100, 2)
+  ];
+  const flatHabits = findStickyHabits(flat);
+  assert.equal(flatHabits.length, 1, 'flat rate is sticky');
+  assert.deepEqual(flatHabits[0].rates, [0.02, 0.02, 0.02]);
+
+  const rising = [
+    runWith('run-1', 11, 200, 1),
+    runWith('run-2', 12, 200, 2),
+    runWith('run-3', 13, 200, 3)
+  ];
+  const risingHabits = findStickyHabits(rising);
+  assert.equal(risingHabits.length, 1, 'rising rate is sticky');
+});
+
+test('findStickyHabits skips sessions with null totalCharacters from the trend but counts them', () => {
+  const runs = [
+    runWith('run-1', 11, 100, 2),
+    runWith('run-2', 12, null, 2),
+    runWith('run-3', 13, 100, 2)
+  ];
+  // Only 2 usable rates: no trend can be assessed, so not sticky and no crash.
+  assert.deepEqual(findStickyHabits(runs), []);
+});
+
+test('findStickyHabits treats a single-session cliff as not improving', () => {
+  // Rates 0.10 -> 0.10 -> 0.02: the newest rate dropped enough, but no
+  // middle rate is strictly below the oldest, so it is not a trend.
+  const runs = [
+    runWith('run-1', 11, 100, 10),
+    runWith('run-2', 12, 100, 10),
+    runWith('run-3', 13, 100, 2)
+  ];
+  const habits = findStickyHabits(runs);
+  assert.equal(habits.length, 1, 'single-session cliff stays sticky');
+  assert.equal(habits[0].sessions, 3);
+});
+
+test('findStickyHabits windows the trend to the last 5 sessions', () => {
+  // Six sessions: a very high rate in the oldest, flat afterwards. The
+  // window ignores the oldest session, so the flat tail is not improving.
+  const runs = [
+    runWith('run-1', 10, 50, 20),
+    runWith('run-2', 11, 100, 1),
+    runWith('run-3', 12, 100, 1),
+    runWith('run-4', 13, 100, 1),
+    runWith('run-5', 14, 100, 1),
+    runWith('run-6', 15, 100, 1)
+  ];
+  const habits = findStickyHabits(runs);
+  assert.equal(habits.length, 1, 'flat last-5 window stays sticky despite old high rate');
+  assert.equal(habits[0].sessions, 6);
+  assert.equal(habits[0].rates.length, 5, 'exposed rates reflect the 5-session window');
+});
+
+test('findStickyHabits orders runs by completedAt, then date, then id', () => {
+  // Caller order is scrambled; sorting must recover true chronological order.
+  // With rates 0.04 -> 0.01 -> 0.01 the pair is improving only if the
+  // timestamps (not the ids or the caller order) drive the sort.
+  const runs = [
+    runWith('run-z', 13, 100, 1),
+    runWith('run-a', 11, 100, 4),
+    { id: 'run-m', date: '2026-09-12', totalCharacters: 100, mistakes: [mistake('e', 'w')] }
+  ];
+  const habits = findStickyHabits(runs);
+  assert.ok(!habits.some(({ expected }) => expected === 'e'), 'ordering by completedAt > date > id');
+
+  // Id fallback with no timestamps at all: id order 'a' < 'b' < 'c' gives
+  // rates 0.01 -> 0.01 -> 0.04 (sticky); raw caller order would give
+  // 0.04 -> 0.01 -> 0.01 (improving, not sticky).
+  const idOnly = [
+    { id: 'c', totalCharacters: 100, mistakes: Array.from({ length: 4 }, () => mistake('e', 'w')) },
+    { id: 'a', totalCharacters: 100, mistakes: [mistake('e', 'w')] },
+    { id: 'b', totalCharacters: 100, mistakes: [mistake('e', 'w')] }
+  ];
+  const idHabits = findStickyHabits(idOnly);
+  assert.equal(idHabits.length, 1, 'id string order is used when no timestamps exist');
+});
+
+test('sessionRate rejects invalid denominators', () => {
+  assert.equal(sessionRate(4, { totalCharacters: 100 }), 0.04);
+  assert.equal(sessionRate(4, { totalCharacters: null }), null);
+  assert.equal(sessionRate(4, { totalCharacters: 0 }), null);
+  assert.equal(sessionRate(4, { totalCharacters: -10 }), null);
+  assert.equal(sessionRate(4, { totalCharacters: 10.5 }), null);
+  assert.equal(sessionRate(4, null), null);
+  assert.equal(sessionRate(4, {}), null);
+});
+
+test('isImproving applies the 60% drop and middle-rate guard', () => {
+  assert.ok(isImproving([0.08, 0.05, 0.02]), 'clear decline');
+  assert.ok(!isImproving([0.10, 0.10, 0.02]), 'single-session cliff is not a trend');
+  assert.ok(!isImproving([0.02, 0.02, 0.02]), 'flat rates are not improving');
+  assert.ok(!isImproving([0.02, 0.03, 0.04]), 'rising rates are not improving');
+  assert.ok(!isImproving([0.08, 0.05]), 'fewer than 3 rates');
+  assert.ok(!isImproving([0.08, NaN, 0.02]), 'non-finite rate');
+  assert.ok(isImproving([0, 0.05, 0.02]), 'cannot improve from zero');
 });

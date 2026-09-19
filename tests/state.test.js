@@ -193,3 +193,18 @@ test('legacy history without latencyBaseline loads as null', () => {
   });
   assert.equal(state.history[0].latencyBaseline, null);
 });
+
+test('invalid totalCharacters sanitizes to null while completedAt stays an ISO string', () => {
+  for (const totalCharacters of [-5, 10.5, 'abc', null, undefined]) {
+    pushHistory({
+      wpm: 72,
+      accuracy: 96,
+      difficulty: 'medium',
+      completedAt: '2026-09-19T12:00:00.000Z',
+      totalCharacters,
+      mistakes: []
+    });
+    assert.equal(state.history[0].totalCharacters, null, `totalCharacters ${String(totalCharacters)} becomes null`);
+    assert.equal(state.history[0].completedAt, '2026-09-19T12:00:00.000Z');
+  }
+});
