@@ -49,9 +49,21 @@ const MIRROR_FINGERS = Object.freeze({
 });
 
 const LATENCY = Object.freeze({
-  motor: 80,        // <80ms:  correct hand path, wrong key landed on
-  transition: 400   // 80-400ms: hard finger transition; >400ms: cognitive uncertainty
+  motor: 80,        // Fallback when no per-user baseline exists.
+  transition: 400   // Fallback when no per-user baseline exists.
 });
+
+// Latency cutoffs relative to a per-user baseline: a "fast" keystroke for a
+// slow typist is different from a fast one for a speed demon. motor <
+// baseline*0.5, transition <= baseline*2.0. With no valid baseline we fall
+// back to the absolute LATENCY constants above.
+function baselineCutoffs(baseline) {
+  const hasBaseline = Number.isFinite(baseline) && baseline > 0;
+  return {
+    motor: hasBaseline ? baseline * 0.5 : LATENCY.motor,
+    transition: hasBaseline ? baseline * 2.0 : LATENCY.transition
+  };
+}
 
 function normalizeKey(key) {
   return typeof key === 'string' && [...key].length === 1 ? key.toLowerCase() : null;
@@ -96,22 +108,26 @@ export function classifySubstitution(expected, actual) {
   return { expected, actual, types, adjacencyDistance, expectedFinger, actualFinger };
 }
 
-export function latencyBand(latencyMs) {
+// Classify latency relative to the user's baseline when one is provided;
+// the second parameter defaults to null so single-argument call sites keep
+// the absolute 80/400ms behavior.
+export function latencyBand(latencyMs, baseline = null) {
   if (!Number.isFinite(latencyMs) || latencyMs < 0) return 'unknown';
-  if (latencyMs < LATENCY.motor) return 'motor';
-  if (latencyMs <= LATENCY.transition) return 'transition';
+  const { motor, transition } = baselineCutoffs(baseline);
+  if (latencyMs < motor) return 'motor';
+  if (latencyMs <= transition) return 'transition';
   return 'cognitive';
 }
 
 // 0-100 severity: closer keys + shorter latency => confident motor error;
 // uncorrected mistakes count as blind spots and score higher than
 // self-corrected ones.
-export function severityScore({ adjacencyDistance = null, latencyMs = null, wasCorrected = false } = {}) {
+export function severityScore({ adjacencyDistance = null, latencyMs = null, wasCorrected = false, baseline = null } = {}) {
   const adjacencyComponent = adjacencyDistance === 1 ? 1
     : adjacencyDistance === 2 ? 0.6
     : adjacencyDistance === 3 ? 0.3
     : 0.1;
-  const band = latencyBand(latencyMs);
+  const band = latencyBand(latencyMs, baseline);
   const latencyComponent = band === 'motor' ? 1
     : band === 'transition' ? 0.6
     : band === 'cognitive' ? 0.2
@@ -159,9 +175,14 @@ export function diagnoseMechanically(summary = {}) {
     homologousRate = 0,
     cognitiveRate = 0,
     avgLatencyMs = null,
-    indexEncroachmentRate = 0
+    indexEncroachmentRate = 0,
+    // Optional per-user baseline (median correct-keystroke latency). When
+    // absent, the vertical-finger-drift rule falls back to the absolute
+    // 80ms motor threshold.
+    baseline = null
   } = summary;
   const diagnoses = [];
+  const motorThreshold = baselineCutoffs(baseline).motor;
 
   if (sameFingerRate > 0.3 && indexEncroachmentRate > 0.2) {
     diagnoses.push({
@@ -170,7 +191,7 @@ export function diagnoseMechanically(summary = {}) {
       recommendation: 'Drill home-row reaches with the middle and ring fingers held down, e.g. slow "dededed fdfdfd" rows before speeding up.'
     });
   }
-  if (adjacentRate > 0.4 && avgLatencyMs !== null && avgLatencyMs < LATENCY.motor) {
+  if (adjacentRate > 0.4 && avgLatencyMs !== null && avgLatencyMs < motorThreshold) {
     diagnoses.push({
       pattern: 'vertical-finger-drift',
       detail: 'Fast adjacent-key substitutions suggest fingers drifting up/down a column instead of curling to the home row.',

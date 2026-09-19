@@ -1,7 +1,7 @@
 import { state, pushHistory, resetRunState } from './state.js';
 import { PASSAGES, selectPassage } from './passages.js';
 import { selectSnippet } from './snippets.js';
-import { backspace, typeCharacter } from './passageRun.js';
+import { backspace, getLatencyBaseline, typeCharacter } from './passageRun.js';
 import { calcAccuracy, calcWPM } from './stats.js';
 import * as ui from './ui.js';
 import { buildInsights, buildTargetedRetry } from './mistakeAnalysis.js';
@@ -124,6 +124,10 @@ function finishTest() {
   const peakWpm = Math.max(state.peakWpm, finalWpm);
 
   const completedAt = new Date().toISOString();
+  // Median correct-keystroke latency for this run (null when too few
+  // samples); stored so later analysis can classify latency relative to
+  // this run's own speed instead of fixed thresholds.
+  const latencyBaseline = getLatencyBaseline(state);
   pushHistory({
     id: `run-${Date.now()}`,
     wpm: finalWpm,
@@ -138,6 +142,7 @@ function finishTest() {
     passageId: state.passage?.id ?? null,
     passageTitle: state.passage?.title ?? null,
     totalCharacters: state.totalKeystrokes,
+    latencyBaseline,
     mistakes: state.mistakes
   });
 

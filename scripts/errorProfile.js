@@ -11,6 +11,7 @@ import {
   latencyBand,
   summarizeFingerDrift
 } from './errorClassification.js';
+import { median } from './passageRun.js';
 
 function mistakesIn(runs = []) {
   return runs.flatMap((run) => (Array.isArray(run?.mistakes) ? run.mistakes : []));
@@ -63,6 +64,22 @@ function countBy(mistakes, keyFn) {
   return counts;
 }
 
+// Rolling typing-speed baseline across runs: median of the per-run
+// baselines. Runs arrive newest-first (see state.history), so the first 5
+// valid baselines are the 5 most recent — a short window keeps the estimate
+// responsive to the user's current speed instead of going stale. No valid
+// baselines (e.g. all legacy entries) => null, and callers fall back to the
+// absolute 80/400ms thresholds.
+function getOverallBaseline(runs = []) {
+  const baselines = [];
+  for (const run of runs) {
+    const value = run?.latencyBaseline;
+    if (Number.isFinite(value) && value > 0) baselines.push(value);
+    if (baselines.length >= 5) break;
+  }
+  return median(baselines);
+}
+
 // A sticky habit: the same (expected, actual) pair appears in at least 3
 // separate sessions with a stable rate (no decline over time), independent
 // of word context — a motor habit, not spelling uncertainty.
@@ -110,7 +127,10 @@ export function buildErrorProfile(runs = []) {
   const total = mistakes.length;
   const rate = (count) => (total === 0 ? 0 : count / total);
 
-  const latencyBands = countBy(mistakes, (mistake) => latencyBand(mistake?.latencyMs));
+  // Classify every mistake's latency against the user's own recent speed
+  // when a baseline exists; otherwise the absolute thresholds apply.
+  const baseline = getOverallBaseline(runs);
+  const latencyBands = countBy(mistakes, (mistake) => latencyBand(mistake?.latencyMs, baseline));
   const corrected = mistakes.filter((mistake) => mistake?.wasCorrected === true).length;
   const drift = summarizeFingerDrift(mistakes);
 
@@ -120,7 +140,8 @@ export function buildErrorProfile(runs = []) {
     homologousRate: rate(typeCounts.homologous),
     cognitiveRate: rate(latencyBands.cognitive ?? 0),
     avgLatencyMs: average(finiteLatencies(mistakes)),
-    indexEncroachmentRate: drift.indexEncroachmentRate
+    indexEncroachmentRate: drift.indexEncroachmentRate,
+    baseline
   };
 
   return {

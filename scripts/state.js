@@ -102,6 +102,12 @@ function sanitizeHistory(candidate) {
       totalCharacters: Number.isInteger(entry.totalCharacters) && entry.totalCharacters >= 0
         ? entry.totalCharacters
         : null,
+      // Per-run typing-speed baseline (median correct-keystroke latency).
+      // Stored as a rounded number; legacy or invalid entries become null
+      // and fall back to the absolute latency thresholds.
+      latencyBaseline: Number.isFinite(entry.latencyBaseline) && entry.latencyBaseline > 0
+        ? Math.round(entry.latencyBaseline)
+        : null,
       mistakes: Array.isArray(entry.mistakes)
         ? entry.mistakes.map(sanitizeMistake).filter((mistake) => mistake !== null)
         : []
