@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { backspace, createPassageRunState, getContainingWord, typeCharacter } from '../scripts/passageRun.js';
+import { backspace, createPassageRunState, getContainingWord, typeCharacter, wordPositionInText } from '../scripts/passageRun.js';
 import { calcAccuracy, calcWPM } from '../scripts/stats.js';
 
 const passage = Object.freeze({ text: 'A, b.' });
@@ -27,12 +27,50 @@ test('an incorrect character starts the timer, counts, and locks progress', () =
   assert.equal(run.currentIndex, 0);
   assert.equal(run.totalKeystrokes, 1);
   assert.equal(run.errorChar, 'x');
-  assert.deepEqual(run.mistakes, [{ expected: 'A', actual: 'x', word: 'A,', characterIndex: 0 }]);
+  assert.deepEqual(run.mistakes, [{
+    expected: 'A',
+    actual: 'x',
+    word: 'A,',
+    characterIndex: 0,
+    timestamp: 2_000,
+    latencyMs: null,
+    prevChar: null,
+    nextChar: ',',
+    positionInWord: 'start',
+    wasCorrected: false
+  }]);
 });
 
 test('word extraction uses whitespace boundaries at passage edges', () => {
   assert.equal(getContainingWord('array[index] then', 0), 'array[index]');
   assert.equal(getContainingWord('first don\'t', 10), "don't");
+});
+
+test('mistakes record latency, neighbors, word position, and correction state', () => {
+  const run = createPassageRunState({ text: 'the cat' });
+  typeCharacter(run, 't', 1_000);
+  typeCharacter(run, 'h', 1_040);
+  typeCharacter(run, 'x', 1_120);
+  const [mistake] = run.mistakes;
+  assert.equal(mistake.expected, 'e');
+  assert.equal(mistake.actual, 'x');
+  assert.equal(mistake.timestamp, 1_120);
+  assert.equal(mistake.latencyMs, 80);
+  assert.equal(mistake.prevChar, 'h');
+  assert.equal(mistake.nextChar, ' ');
+  assert.equal(mistake.positionInWord, 'end');
+  assert.equal(mistake.wasCorrected, false);
+
+  backspace(run);
+  assert.equal(run.mistakes[0].wasCorrected, true);
+});
+
+test('wordPositionInText labels start, middle, and end of words', () => {
+  assert.equal(wordPositionInText('the cat', 0), 'start');
+  assert.equal(wordPositionInText('the cat', 1), 'middle');
+  assert.equal(wordPositionInText('the cat', 2), 'end');
+  assert.equal(wordPositionInText('the cat', 4), 'start');
+  assert.equal(wordPositionInText('the cat', 3), 'middle');
 });
 
 test('Backspace clears only a current error and allows retry at the same index', () => {
