@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildErrorProfile, buildSubstitutionMatrix, findStickyHabits, isImproving, sessionRate } from '../scripts/errorProfile.js';
+import { DEFAULT_SETTINGS, STORAGE_KEY, loadState, state } from '../scripts/state.js';
+import { MemoryStorage } from './helpers/memoryStorage.js';
 
 const mistake = (expected, actual, overrides = {}) => ({
   expected,
@@ -337,4 +339,82 @@ test('buildErrorProfile exposes zero labelOverlap with no mistakes', () => {
   const profile = buildErrorProfile([]);
   assert.equal(profile.labelOverlap, 0);
   assert.deepEqual(profile.diagnoses, []);
+});
+
+test('buildErrorProfile handles a single empty session', () => {
+  const profile = buildErrorProfile([{
+    id: 'run-1', mistakes: [], totalCharacters: 100, completedAt: '2026-09-19T12:00:00.000Z'
+  }]);
+  assert.equal(profile.runsAnalyzed, 1);
+  assert.equal(profile.totalMistakes, 0);
+  assert.equal(profile.correctionRate, 0);
+  assert.deepEqual(profile.diagnoses, []);
+  assert.deepEqual(profile.stickyHabits, []);
+  assert.equal(profile.labelOverlap, 0);
+});
+
+test('buildErrorProfile tolerates null runs and non-array mistakes', () => {
+  const profile = buildErrorProfile([null, { id: 'run-1' }, { id: 'run-2', mistakes: 'not-an-array' }]);
+  assert.equal(profile.runsAnalyzed, 3);
+  assert.equal(profile.totalMistakes, 0);
+});
+
+test('buildSubstitutionMatrix excludes non-positive and non-finite latencies from averages', () => {
+  const matrix = buildSubstitutionMatrix([
+    { expected: 'e', actual: 'w', latencyMs: 100 },
+    { expected: 'e', actual: 'w', latencyMs: -5 },
+    { expected: 'e', actual: 'w', latencyMs: NaN },
+    // The real filter is Number.isFinite(latency) && latency >= 0, so
+    // Infinity is excluded from the average even though Infinity >= 0.
+    { expected: 'e', actual: 'w', latencyMs: Infinity },
+    { expected: 'e', actual: 'w', latencyMs: null }
+  ]);
+  assert.equal(matrix.e.w.count, 5);
+  assert.equal(matrix.e.w.avgLatencyMs, 100);
+});
+
+test('findStickyHabits is not sticky without per-session denominators', () => {
+  // Rate-based contract (Issue 2): no totalCharacters means no rate, and
+  // sessions without a usable rate are excluded from the trend — so this
+  // pair can never be flagged, however often it repeats.
+  const runs = [
+    { mistakes: [{ expected: 'e', actual: 'w' }] },
+    { mistakes: [{ expected: 'e', actual: 'w' }] },
+    { mistakes: [{ expected: 'e', actual: 'w' }] }
+  ];
+  assert.deepEqual(findStickyHabits(runs), []);
+});
+
+test('error profile is stable across save/load', () => {
+  const storage = new MemoryStorage();
+  const runs = [
+    { id: 'run-3', wpm: 62, accuracy: 94, difficulty: 'medium', totalCharacters: 100,
+      completedAt: '2026-09-19T12:00:00.000Z',
+      mistakes: [{ expected: 'e', actual: 'w', word: 'the', characterIndex: 2, timestamp: 1_000, latencyMs: 55, prevChar: 'h', nextChar: ' ', positionInWord: 'end', wasCorrected: false }] },
+    { id: 'run-2', wpm: 61, accuracy: 93, difficulty: 'medium', totalCharacters: 100,
+      completedAt: '2026-09-18T12:00:00.000Z',
+      mistakes: [{ expected: 'e', actual: 'w', word: 'the', characterIndex: 2, timestamp: 1_000, latencyMs: 50, prevChar: 'h', nextChar: ' ', positionInWord: 'end', wasCorrected: false }] },
+    { id: 'run-1', wpm: 60, accuracy: 92, difficulty: 'medium', totalCharacters: 100,
+      completedAt: '2026-09-17T12:00:00.000Z',
+      mistakes: [{ expected: 'e', actual: 'w', word: 'the', characterIndex: 2, timestamp: 1_000, latencyMs: 45, prevChar: 'h', nextChar: ' ', positionInWord: 'end', wasCorrected: false }] }
+  ];
+  storage.setItem(STORAGE_KEY, JSON.stringify({ settings: DEFAULT_SETTINGS, history: runs }));
+
+  const previous = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    assert.equal(loadState(), true);
+  } finally {
+    globalThis.localStorage = previous;
+  }
+
+  // Storage order is newest-first; findStickyHabits must sort internally.
+  const profile = buildErrorProfile(state.history);
+  assert.equal(profile.totalMistakes, 3);
+  assert.equal(profile.commonSubstitutions[0].expected, 'e');
+  assert.equal(profile.commonSubstitutions[0].actual, 'w');
+  assert.equal(profile.commonSubstitutions[0].count, 3);
+  assert.ok(profile.stickyHabits.some((h) => h.expected === 'e' && h.actual === 'w'));
+
+  state.history = [];
 });

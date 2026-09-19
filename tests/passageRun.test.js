@@ -165,3 +165,67 @@ test('getLatencyBaseline needs 10 samples before returning the median', () => {
   assert.equal(getLatencyBaseline({ correctKeystrokeLatencies: [1, 2, 3] }), null);
   assert.equal(getLatencyBaseline(null), null);
 });
+
+test('first keystroke of a run records a null latency', () => {
+  const run = createPassageRunState({ text: 'ab' });
+  typeCharacter(run, 'x', 1_000);
+  assert.equal(run.mistakes.length, 1);
+  assert.equal(run.mistakes[0].latencyMs, null);
+});
+
+test('second keystroke latency is measured from the previous accepted keystroke', () => {
+  const run = createPassageRunState({ text: 'ab' });
+  typeCharacter(run, 'a', 1_000);
+  typeCharacter(run, 'x', 1_080);
+  assert.equal(run.mistakes.length, 1);
+  assert.equal(run.mistakes[0].latencyMs, 80);
+});
+
+test('backspace does not reset the inter-keystroke timer', () => {
+  const run = createPassageRunState({ text: 'ab' });
+  typeCharacter(run, 'x', 1_000);
+  backspace(run);
+  assert.equal(run.lastKeystrokeAt, 1_000);
+  typeCharacter(run, 'a', 1_050);
+  typeCharacter(run, 'y', 1_100);
+  assert.equal(run.mistakes.length, 2);
+  // 1_100 - 1_050: measured from the last accepted keystroke, not the backspace.
+  assert.equal(run.mistakes[1].latencyMs, 50);
+});
+
+test('multi-character input is rejected without changing state', () => {
+  const run = createPassageRunState({ text: 'ab' });
+  const before = JSON.parse(JSON.stringify(run));
+  assert.deepEqual(typeCharacter(run, 'ab', 1_000), { accepted: false, correct: false, finished: false });
+  assert.deepEqual(run, before);
+});
+
+test('a single astral-plane character is accepted as one keystroke', () => {
+  // [...'😀'].length === 1, so the length guard lets it through; it is simply
+  // logged as a wrong character with no keyboard position or finger.
+  const run = createPassageRunState({ text: 'a' });
+  assert.deepEqual(typeCharacter(run, '😀', 1_000), { accepted: true, correct: false, finished: false });
+  assert.equal(run.mistakes[0].latencyMs, null);
+});
+
+test('getContainingWord handles tabs, newlines, and multiple spaces', () => {
+  assert.equal(getContainingWord('foo\tbar', 4), 'bar');
+  assert.equal(getContainingWord('foo\nbar', 4), 'bar');
+  assert.equal(getContainingWord('foo   bar', 6), 'bar');
+  // An index on whitespace resolves to the word on its left when the
+  // previous character is a letter, and to '' when it is also whitespace.
+  assert.equal(getContainingWord('foo   bar', 3), 'foo');
+  assert.equal(getContainingWord('foo   bar', 5), '');
+});
+
+test('wordPositionInText handles tab-separated words', () => {
+  assert.equal(wordPositionInText('foo\tbar', 4), 'start');
+  assert.equal(wordPositionInText('foo\tbar', 5), 'middle');
+  assert.equal(wordPositionInText('foo\tbar', 6), 'end');
+});
+
+test('startedAt is set on the first accepted keystroke even if it is wrong', () => {
+  const run = createPassageRunState({ text: 'a' });
+  typeCharacter(run, 'x', 5_000);
+  assert.equal(run.startedAt, 5_000);
+});

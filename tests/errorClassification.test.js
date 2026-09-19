@@ -224,3 +224,101 @@ test('DIAGNOSIS_PRECEDENCE covers exactly the four known patterns', () => {
   ]);
   assert.equal(MAX_DIAGNOSES, 2);
 });
+
+test('latencyBand handles exact, zero, negative, and non-finite inputs', () => {
+  assert.equal(latencyBand(0), 'motor');
+  assert.equal(latencyBand(1), 'motor');
+  assert.equal(latencyBand(79.999), 'motor');
+  assert.equal(latencyBand(80), 'transition');
+  assert.equal(latencyBand(80.001), 'transition');
+  assert.equal(latencyBand(399.999), 'transition');
+  assert.equal(latencyBand(400), 'transition');
+  assert.equal(latencyBand(400.001), 'cognitive');
+  assert.equal(latencyBand(-1), 'unknown');
+  assert.equal(latencyBand(-0.0001), 'unknown');
+  assert.equal(latencyBand(NaN), 'unknown');
+  // Number.isFinite(Infinity) is false, so non-finite latencies are 'unknown'.
+  assert.equal(latencyBand(Infinity), 'unknown');
+  assert.equal(latencyBand(-Infinity), 'unknown');
+  assert.equal(latencyBand(null), 'unknown');
+  assert.equal(latencyBand(undefined), 'unknown');
+  assert.equal(latencyBand('80'), 'unknown');
+  assert.equal(latencyBand({}), 'unknown');
+  assert.equal(latencyBand([]), 'unknown');
+});
+
+test('latencyBand uses baseline-relative cutoffs when the baseline is valid', () => {
+  // baseline = 200 => motor < 100, transition 100-400, cognitive > 400.
+  // The motor cutoff is exclusive (<) and the transition cutoff inclusive (<=).
+  assert.equal(latencyBand(99, 200), 'motor');
+  assert.equal(latencyBand(100, 200), 'transition');
+  assert.equal(latencyBand(400, 200), 'transition');
+  assert.equal(latencyBand(401, 200), 'cognitive');
+});
+
+test('latencyBand falls back to absolute cutoffs for invalid baselines', () => {
+  for (const baseline of [null, 0, -5, NaN, Infinity]) {
+    assert.equal(latencyBand(79, baseline), 'motor');
+    assert.equal(latencyBand(400.001, baseline), 'cognitive');
+  }
+});
+
+test('classifySubstitution handles non-string and multi-character inputs', () => {
+  const result = classifySubstitution('ab', 'c');
+  assert.deepEqual(result.types, ['other']);
+  assert.equal(result.adjacencyDistance, null);
+  assert.equal(result.expectedFinger, null);
+  // 'c' is a valid single key even though the pair is unclassifiable.
+  assert.equal(result.actualFinger, 'leftMiddle');
+
+  const nullCase = classifySubstitution(null, 'a');
+  assert.deepEqual(nullCase.types, ['other']);
+  assert.equal(nullCase.adjacencyDistance, null);
+
+  const numCase = classifySubstitution(1, 'a');
+  assert.deepEqual(numCase.types, ['other']);
+
+  const emptyCase = classifySubstitution('', '');
+  assert.deepEqual(emptyCase.types, ['other']);
+});
+
+test('classifySubstitution is case-insensitive on input', () => {
+  assert.deepEqual(classifySubstitution('E', 'D').types, classifySubstitution('e', 'd').types);
+  // r is leftIndex, u is rightIndex: a mirror pair.
+  assert.deepEqual(classifySubstitution('R', 'U').types, ['homologous']);
+});
+
+test('unicode keys resolve to no finger and no position', () => {
+  assert.equal(fingerForKey('😀'), null);
+  assert.equal(fingerForKey('é'), null);
+  // Combining mark: two code points, so normalizeKey rejects it outright.
+  assert.equal(fingerForKey('\u0065\u0301'), null);
+  assert.equal(keyboardDistance('😀', 'e'), null);
+  assert.equal(isHomologousPair('😀', 'e'), false);
+});
+
+test('severityScore stays within 0-100 across extremes', () => {
+  assert.ok(severityScore({ adjacencyDistance: 0, latencyMs: 0, wasCorrected: false }) >= 0);
+  const worst = severityScore({ adjacencyDistance: 100, latencyMs: 9999, wasCorrected: true });
+  assert.ok(worst >= 0 && worst <= 100);
+  assert.ok(severityScore({ adjacencyDistance: null, latencyMs: null }) >= 0);
+  const empty = severityScore({});
+  assert.ok(empty >= 0 && empty <= 100);
+});
+
+test('summarizeFingerDrift skips malformed entries without throwing', () => {
+  const result = summarizeFingerDrift([
+    null,
+    undefined,
+    { expected: 'e' },
+    { actual: 'r' },
+    { expected: 'e', actual: 'r' },
+    { expected: null, actual: 'r' },
+    { expected: 'e', actual: null }
+  ]);
+  assert.deepEqual(Object.keys(result).sort(), ['indexEncroachmentRate', 'transitions']);
+  assert.equal(result.transitions.length, 1);
+  assert.equal(result.transitions[0].transition, 'leftMiddle->leftIndex');
+  assert.equal(result.transitions[0].count, 1);
+  assert.equal(result.indexEncroachmentRate, 1);
+});
