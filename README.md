@@ -1,4 +1,4 @@
-# Cadence
+# cadence
 
 [play now](https://isaiahcampusano.github.io/wpm-/)
 
